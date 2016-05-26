@@ -1,14 +1,17 @@
-(***********************************************************************)
-(*                                                                     *)
-(*                                OCaml                                *)
-(*                                                                     *)
-(*            Xavier Leroy, projet Cristal, INRIA Rocquencourt         *)
-(*                                                                     *)
-(*  Copyright 1996 Institut National de Recherche en Informatique et   *)
-(*  en Automatique.  All rights reserved.  This file is distributed    *)
-(*  under the terms of the Q Public License version 1.0.               *)
-(*                                                                     *)
-(***********************************************************************)
+(**************************************************************************)
+(*                                                                        *)
+(*                                 OCaml                                  *)
+(*                                                                        *)
+(*             Xavier Leroy, projet Cristal, INRIA Rocquencourt           *)
+(*                                                                        *)
+(*   Copyright 1996 Institut National de Recherche en Informatique et     *)
+(*     en Automatique.                                                    *)
+(*                                                                        *)
+(*   All rights reserved.  This file is distributed under the terms of    *)
+(*   the GNU Lesser General Public License version 2.1, with the          *)
+(*   special exception on linking described in the file LICENSE.          *)
+(*                                                                        *)
+(**************************************************************************)
 
 (* Link a set of .cmx/.o files and produce an executable *)
 
@@ -94,7 +97,9 @@ let lib_ccopts = ref []
 let add_ccobjs origin l =
   if not !Clflags.no_auto_link then begin
     lib_ccobjs := l.lib_ccobjs @ !lib_ccobjs;
-    let replace_origin = Misc.replace_substring ~before:"$CAMLORIGIN" ~after:origin in
+    let replace_origin =
+      Misc.replace_substring ~before:"$CAMLORIGIN" ~after:origin
+    in
     lib_ccopts := List.map replace_origin l.lib_ccopts @ !lib_ccopts
   end
 
@@ -130,7 +135,7 @@ let is_required name =
   try ignore (Hashtbl.find missing_globals name); true
   with Not_found -> false
 
-let add_required by (name, crc) =
+let add_required by (name, _crc) =
   try
     let rq = Hashtbl.find missing_globals name in
     rq := by :: !rq
@@ -201,7 +206,8 @@ let scan_file obj_name tolink = match read_file obj_name with
 let make_startup_file ppf units_list =
   let compile_phrase p = Asmgen.compile_phrase ppf p in
   Location.input_name := "caml_startup"; (* set name of "current" input *)
-  Compilenv.reset "_startup"; (* set the name of the "current" compunit *)
+  Compilenv.reset ~source_provenance:Timings.Startup "_startup";
+  (* set the name of the "current" compunit *)
   Emit.begin_assembly ();
   let name_list =
     List.flatten (List.map (fun (info,_,_) -> info.ui_defines) units_list) in
@@ -234,7 +240,7 @@ let make_startup_file ppf units_list =
 let make_shared_startup_file ppf units =
   let compile_phrase p = Asmgen.compile_phrase ppf p in
   Location.input_name := "caml_startup";
-  Compilenv.reset "_shared_startup";
+  Compilenv.reset ~source_provenance:Timings.Startup "_shared_startup";
   Emit.begin_assembly ();
   List.iter compile_phrase
     (Cmmgen.generic_functions true (List.map fst units));
@@ -265,7 +271,7 @@ let link_shared ppf objfiles output_name =
     then output_name ^ ".startup" ^ ext_asm
     else Filename.temp_file "camlstartup" ext_asm in
   let startup_obj = output_name ^ ".startup" ^ ext_obj in
-  Asmgen.compile_unit
+  Asmgen.compile_unit ~source_provenance:Timings.Startup output_name
     startup !Clflags.keep_startup_file startup_obj
     (fun () ->
        make_shared_startup_file ppf
@@ -277,12 +283,14 @@ let link_shared ppf objfiles output_name =
 let call_linker file_list startup_file output_name =
   let main_dll = !Clflags.output_c_object
                  && Filename.check_suffix output_name Config.ext_dll
+  and main_obj_runtime = !Clflags.output_complete_object
   in
   let files = startup_file :: (List.rev file_list) in
   let files, c_lib =
-    if (not !Clflags.output_c_object) || main_dll then
+    if (not !Clflags.output_c_object) || main_dll || main_obj_runtime then
       files @ (List.rev !Clflags.ccobjs) @ runtime_lib (),
-      (if !Clflags.nopervasives then "" else Config.native_c_libraries)
+      (if !Clflags.nopervasives || main_obj_runtime
+       then "" else Config.native_c_libraries)
     else
       files, ""
   in
@@ -322,11 +330,12 @@ let link ppf objfiles output_name =
     then output_name ^ ".startup" ^ ext_asm
     else Filename.temp_file "camlstartup" ext_asm in
   let startup_obj = Filename.temp_file "camlstartup" ext_obj in
-  Asmgen.compile_unit
+  Asmgen.compile_unit ~source_provenance:Timings.Startup output_name
     startup !Clflags.keep_startup_file startup_obj
     (fun () -> make_startup_file ppf units_tolink);
   Misc.try_finally
-    (fun () -> call_linker (List.map object_file_name objfiles) startup_obj output_name)
+    (fun () ->
+      call_linker (List.map object_file_name objfiles) startup_obj output_name)
     (fun () -> remove_file startup_obj)
 
 (* Error report *)

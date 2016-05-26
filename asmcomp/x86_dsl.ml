@@ -1,14 +1,17 @@
-(***********************************************************************)
-(*                                                                     *)
-(*                                OCaml                                *)
-(*                                                                     *)
-(*        Fabrice Le Fessant, projet Gallium, INRIA Rocquencourt       *)
-(*                                                                     *)
-(*  Copyright 1996 Institut National de Recherche en Informatique et   *)
-(*  en Automatique.  All rights reserved.  This file is distributed    *)
-(*  under the terms of the Q Public License version 1.0.               *)
-(*                                                                     *)
-(***********************************************************************)
+(**************************************************************************)
+(*                                                                        *)
+(*                                 OCaml                                  *)
+(*                                                                        *)
+(*         Fabrice Le Fessant, projet Gallium, INRIA Rocquencourt         *)
+(*                                                                        *)
+(*   Copyright 1996 Institut National de Recherche en Informatique et     *)
+(*     en Automatique.                                                    *)
+(*                                                                        *)
+(*   All rights reserved.  This file is distributed under the terms of    *)
+(*   the GNU Lesser General Public License version 2.1, with the          *)
+(*   special exception on linking described in the file LICENSE.          *)
+(*                                                                        *)
+(**************************************************************************)
 
 (** Helpers for Intel code generators *)
 
@@ -23,7 +26,7 @@
        precision instructions.  (As with Intel syntax.)
 
      - A legacy bug in GAS:
-       https://sourceware.org/binutils/docs-2.22/as/i386_002dBugs.html#i386_002dBugs
+   https://sourceware.org/binutils/docs-2.22/as/i386_002dBugs.html#i386_002dBugs
        is not replicated here.  It is managed by X86_gas.
 *)
 
@@ -83,11 +86,11 @@ module D = struct
   let comment s = directive (Comment s)
   let data () = section [ ".data" ] None []
   let extrn s ptr = directive (External (s, ptr))
-  let file num filename = directive (File (num, filename))
+  let file ~file_num ~file_name = directive (File (file_num, file_name))
   let global s = directive (Global s)
   let indirect_symbol s = directive (Indirect_symbol s)
   let label ?(typ = NONE) s = directive (NewLabel (s, typ))
-  let loc num loc = directive (Loc (num, loc))
+  let loc ~file_num ~line ~col = directive (Loc (file_num, line, col))
   let long cst = directive (Long cst)
   let mode386 () = directive Mode386
   let model name = directive (Model name)

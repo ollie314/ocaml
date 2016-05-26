@@ -1,15 +1,17 @@
-/***********************************************************************/
-/*                                                                     */
-/*                                OCaml                                */
-/*                                                                     */
-/*         Xavier Leroy and Damien Doligez, INRIA Rocquencourt         */
-/*                                                                     */
-/*  Copyright 1996 Institut National de Recherche en Informatique et   */
-/*  en Automatique.  All rights reserved.  This file is distributed    */
-/*  under the terms of the GNU Library General Public License, with    */
-/*  the special exception on linking described in file ../LICENSE.     */
-/*                                                                     */
-/***********************************************************************/
+/**************************************************************************/
+/*                                                                        */
+/*                                 OCaml                                  */
+/*                                                                        */
+/*          Xavier Leroy and Damien Doligez, INRIA Rocquencourt           */
+/*                                                                        */
+/*   Copyright 1996 Institut National de Recherche en Informatique et     */
+/*     en Automatique.                                                    */
+/*                                                                        */
+/*   All rights reserved.  This file is distributed under the terms of    */
+/*   the GNU Lesser General Public License version 2.1, with the          */
+/*   special exception on linking described in the file LICENSE.          */
+/*                                                                        */
+/**************************************************************************/
 
 /* Start-up code */
 
@@ -138,7 +140,8 @@ void caml_read_section_descriptors(int fd, struct exec_trailer *trail)
    Return the length of the section data in bytes, or -1 if no section
    found with that name. */
 
-int32_t caml_seek_optional_section(int fd, struct exec_trailer *trail, char *name)
+int32_t caml_seek_optional_section(int fd, struct exec_trailer *trail,
+                                   char *name)
 {
   long ofs;
   int i;
@@ -256,7 +259,7 @@ extern void caml_init_ieee_floats (void);
 extern void caml_signal_thread(void * lpParam);
 #endif
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER) && __STDC_SECURE_LIB__ >= 200411L
 
 /* PR 4887: avoid crash box of windows runtime on some system calls */
 extern void caml_install_invalid_parameter_handler();
@@ -278,7 +281,7 @@ CAMLexport void caml_main(char **argv)
   /* Machine-dependent initialization of the floating-point hardware
      so that it behaves as much as possible as specified in IEEE */
   caml_init_ieee_floats();
-#ifdef _MSC_VER
+#if defined(_MSC_VER) && __STDC_SECURE_LIB__ >= 200411L
   caml_install_invalid_parameter_handler();
 #endif
   caml_init_custom_operations();
@@ -286,9 +289,13 @@ CAMLexport void caml_main(char **argv)
   caml_external_raise = NULL;
   /* Determine options and position of bytecode file */
 #ifdef DEBUG
-  caml_verb_gc = 0xBF;
+  caml_verb_gc = 0x3F;
 #endif
   caml_parse_ocamlrunparam();
+#ifdef DEBUG
+  caml_gc_message (-1, "### OCaml runtime: debug mode ###\n", 0);
+#endif
+
   pos = 0;
 
   /* First, try argv[0] (when ocamlrun is called by a bytecode program) */
@@ -325,9 +332,10 @@ CAMLexport void caml_main(char **argv)
   /* Initialize the abstract machine */
   caml_init_gc (caml_init_minor_heap_wsz, caml_init_heap_wsz,
                 caml_init_heap_chunk_sz, caml_init_percent_free,
-                caml_init_max_percent_free);
+                caml_init_max_percent_free, caml_init_major_window);
   caml_init_stack (caml_init_max_stack_wsz);
   caml_init_atom_table();
+  caml_init_backtrace();
   /* Initialize the interpreter */
   caml_interprete(NULL, 0);
   /* Initialize the debugger, if needed */
@@ -389,7 +397,7 @@ CAMLexport void caml_startup_code(
   static char proc_self_exe[256];
 
   caml_init_ieee_floats();
-#ifdef _MSC_VER
+#if defined(_MSC_VER) && __STDC_SECURE_LIB__ >= 200411L
   caml_install_invalid_parameter_handler();
 #endif
   caml_init_custom_operations();
@@ -408,9 +416,10 @@ CAMLexport void caml_startup_code(
   /* Initialize the abstract machine */
   caml_init_gc (caml_init_minor_heap_wsz, caml_init_heap_wsz,
                 caml_init_heap_chunk_sz, caml_init_percent_free,
-                caml_init_max_percent_free);
+                caml_init_max_percent_free, caml_init_major_window);
   caml_init_stack (caml_init_max_stack_wsz);
   caml_init_atom_table();
+  caml_init_backtrace();
   /* Initialize the interpreter */
   caml_interprete(NULL, 0);
   /* Initialize the debugger, if needed */

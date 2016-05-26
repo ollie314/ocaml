@@ -1,14 +1,17 @@
-(***********************************************************************)
-(*                                                                     *)
-(*                                OCaml                                *)
-(*                                                                     *)
-(*        Fabrice Le Fessant, projet Gallium, INRIA Rocquencourt       *)
-(*                                                                     *)
-(*  Copyright 2014 Institut National de Recherche en Informatique et   *)
-(*  en Automatique.  All rights reserved.  This file is distributed    *)
-(*  under the terms of the Q Public License version 1.0.               *)
-(*                                                                     *)
-(***********************************************************************)
+(**************************************************************************)
+(*                                                                        *)
+(*                                 OCaml                                  *)
+(*                                                                        *)
+(*         Fabrice Le Fessant, projet Gallium, INRIA Rocquencourt         *)
+(*                                                                        *)
+(*   Copyright 2014 Institut National de Recherche en Informatique et     *)
+(*     en Automatique.                                                    *)
+(*                                                                        *)
+(*   All rights reserved.  This file is distributed under the terms of    *)
+(*   the GNU Lesser General Public License version 2.1, with the          *)
+(*   special exception on linking described in the file LICENSE.          *)
+(*                                                                        *)
+(**************************************************************************)
 
 (** Helpers for Intel code generators *)
 
@@ -73,11 +76,11 @@ module D : sig
   val comment: string -> unit
   val data: unit -> unit
   val extrn: string -> data_type -> unit
-  val file: int -> string -> unit
+  val file: file_num:int -> file_name:string -> unit
   val global: string -> unit
   val indirect_symbol: string -> unit
   val label: ?typ:data_type -> string -> unit
-  val loc: int -> int -> unit
+  val loc: file_num:int -> line:int -> col:int -> unit
   val long: constant -> unit
   val mode386: unit -> unit
   val model: string -> unit

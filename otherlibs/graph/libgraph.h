@@ -1,15 +1,17 @@
-/***********************************************************************/
-/*                                                                     */
-/*                                OCaml                                */
-/*                                                                     */
-/*            Xavier Leroy, projet Cristal, INRIA Rocquencourt         */
-/*                                                                     */
-/*  Copyright 1996 Institut National de Recherche en Informatique et   */
-/*  en Automatique.  All rights reserved.  This file is distributed    */
-/*  under the terms of the GNU Library General Public License, with    */
-/*  the special exception on linking described in file ../../LICENSE.  */
-/*                                                                     */
-/***********************************************************************/
+/**************************************************************************/
+/*                                                                        */
+/*                                 OCaml                                  */
+/*                                                                        */
+/*             Xavier Leroy, projet Cristal, INRIA Rocquencourt           */
+/*                                                                        */
+/*   Copyright 1996 Institut National de Recherche en Informatique et     */
+/*     en Automatique.                                                    */
+/*                                                                        */
+/*   All rights reserved.  This file is distributed under the terms of    */
+/*   the GNU Lesser General Public License version 2.1, with the          */
+/*   special exception on linking described in the file LICENSE.          */
+/*                                                                        */
+/**************************************************************************/
 
 #include <stdio.h>
 #include <X11/Xlib.h>
@@ -74,7 +76,10 @@ extern int caml_gr_bits_per_pixel;
 #endif
 #endif
 
-extern void caml_gr_fail(char *fmt, char *arg) Noreturn;
+CAMLnoreturn_start
+extern void caml_gr_fail(char *fmt, char *arg)
+CAMLnoreturn_end;
+
 extern void caml_gr_check_open(void);
 extern unsigned long caml_gr_pixel_rgb(int rgb);
 extern int caml_gr_rgb_pixel(long unsigned int pixel);

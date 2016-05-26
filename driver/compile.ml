@@ -1,14 +1,17 @@
-(***********************************************************************)
-(*                                                                     *)
-(*                                OCaml                                *)
-(*                                                                     *)
-(*            Xavier Leroy, projet Cristal, INRIA Rocquencourt         *)
-(*                                                                     *)
-(*  Copyright 2002 Institut National de Recherche en Informatique et   *)
-(*  en Automatique.  All rights reserved.  This file is distributed    *)
-(*  under the terms of the Q Public License version 1.0.               *)
-(*                                                                     *)
-(***********************************************************************)
+(**************************************************************************)
+(*                                                                        *)
+(*                                 OCaml                                  *)
+(*                                                                        *)
+(*             Xavier Leroy, projet Cristal, INRIA Rocquencourt           *)
+(*                                                                        *)
+(*   Copyright 2002 Institut National de Recherche en Informatique et     *)
+(*     en Automatique.                                                    *)
+(*                                                                        *)
+(*   All rights reserved.  This file is distributed under the terms of    *)
+(*   the GNU Lesser General Public License version 2.1, with the          *)
+(*   special exception on linking described in the file LICENSE.          *)
+(*                                                                        *)
+(**************************************************************************)
 
 (* The batch compiler *)
 
@@ -42,7 +45,10 @@ let interface ppf sourcefile outputprefix =
   Typecore.force_delayed_checks ();
   Warnings.check_fatal ();
   if not !Clflags.print_types then begin
-    let sg = Env.save_signature sg modulename (outputprefix ^ ".cmi") in
+    let deprecated = Builtin_attributes.deprecated_of_sig ast in
+    let sg =
+      Env.save_signature ~deprecated sg modulename (outputprefix ^ ".cmi")
+    in
     Typemod.save_signature modulename tsg outputprefix sourcefile
       initial_env sg ;
   end
@@ -60,51 +66,50 @@ let implementation ppf sourcefile outputprefix =
   let modulename = module_of_filename ppf sourcefile outputprefix in
   Env.set_unit_name modulename;
   let env = Compmisc.initial_env() in
-  if !Clflags.print_types then begin
-    let comp ast =
-      ast
+  try
+    let (typedtree, coercion) =
+      Pparse.parse_implementation ~tool_name ppf sourcefile
       ++ print_if ppf Clflags.dump_parsetree Printast.implementation
       ++ print_if ppf Clflags.dump_source Pprintast.structure
-      ++ Typemod.type_implementation sourcefile outputprefix modulename env
+      ++ Timings.(time (Typing sourcefile))
+          (Typemod.type_implementation sourcefile outputprefix modulename env)
       ++ print_if ppf Clflags.dump_typedtree
-          Printtyped.implementation_with_coercion
-      ++ (fun _ -> ());
+        Printtyped.implementation_with_coercion
+    in
+    if !Clflags.print_types then begin
       Warnings.check_fatal ();
       Stypes.dump (Some (outputprefix ^ ".annot"))
-    in
-    try comp (Pparse.parse_implementation ~tool_name ppf sourcefile)
-    with x ->
-      Stypes.dump (Some (outputprefix ^ ".annot"));
-      raise x
-  end else begin
-    let objfile = outputprefix ^ ".cmo" in
-    let oc = open_out_bin objfile in
-    let comp ast =
-      ast
-      ++ print_if ppf Clflags.dump_parsetree Printast.implementation
-      ++ print_if ppf Clflags.dump_source Pprintast.structure
-      ++ Typemod.type_implementation sourcefile outputprefix modulename env
-      ++ print_if ppf Clflags.dump_typedtree
-                  Printtyped.implementation_with_coercion
-      ++ Translmod.transl_implementation modulename
-      ++ print_if ppf Clflags.dump_rawlambda Printlambda.lambda
-      ++ Simplif.simplify_lambda
-      ++ print_if ppf Clflags.dump_lambda Printlambda.lambda
-      ++ Bytegen.compile_implementation modulename
-      ++ print_if ppf Clflags.dump_instr Printinstr.instrlist
-      ++ Emitcode.to_file oc modulename objfile;
-      Warnings.check_fatal ();
-      close_out oc;
-      Stypes.dump (Some (outputprefix ^ ".annot"))
-    in
-    try comp (Pparse.parse_implementation ~tool_name ppf sourcefile)
-    with x ->
-      close_out oc;
-      remove_file objfile;
-      Stypes.dump (Some (outputprefix ^ ".annot"));
-      raise x
-  end
+    end else begin
+      let bytecode =
+        (typedtree, coercion)
+        ++ Timings.(time (Transl sourcefile))
+            (Translmod.transl_implementation modulename)
+        ++ print_if ppf Clflags.dump_rawlambda Printlambda.lambda
+        ++ Timings.(accumulate_time (Generate sourcefile))
+            (fun lambda ->
+              Simplif.simplify_lambda lambda
+              ++ print_if ppf Clflags.dump_lambda Printlambda.lambda
+              ++ Bytegen.compile_implementation modulename
+              ++ print_if ppf Clflags.dump_instr Printinstr.instrlist)
+      in
+      let objfile = outputprefix ^ ".cmo" in
+      let oc = open_out_bin objfile in
+      try
+        bytecode
+        ++ Timings.(accumulate_time (Generate sourcefile))
+            (Emitcode.to_file oc modulename objfile);
+        Warnings.check_fatal ();
+        close_out oc;
+        Stypes.dump (Some (outputprefix ^ ".annot"))
+      with x ->
+        close_out oc;
+        remove_file objfile;
+        raise x
+    end
+  with x ->
+    Stypes.dump (Some (outputprefix ^ ".annot"));
+    raise x
 
 let c_file name =
   Location.input_name := name;
-  if Ccomp.compile_file ~output_name:!Clflags.output_name name <> 0 then exit 2
+  if Ccomp.compile_file name <> 0 then exit 2

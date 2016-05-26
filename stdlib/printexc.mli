@@ -1,15 +1,17 @@
-(***********************************************************************)
-(*                                                                     *)
-(*                                OCaml                                *)
-(*                                                                     *)
-(*            Xavier Leroy, projet Cristal, INRIA Rocquencourt         *)
-(*                                                                     *)
-(*  Copyright 1996 Institut National de Recherche en Informatique et   *)
-(*  en Automatique.  All rights reserved.  This file is distributed    *)
-(*  under the terms of the GNU Library General Public License, with    *)
-(*  the special exception on linking described in file ../LICENSE.     *)
-(*                                                                     *)
-(***********************************************************************)
+(**************************************************************************)
+(*                                                                        *)
+(*                                 OCaml                                  *)
+(*                                                                        *)
+(*             Xavier Leroy, projet Cristal, INRIA Rocquencourt           *)
+(*                                                                        *)
+(*   Copyright 1996 Institut National de Recherche en Informatique et     *)
+(*     en Automatique.                                                    *)
+(*                                                                        *)
+(*   All rights reserved.  This file is distributed under the terms of    *)
+(*   the GNU Lesser General Public License version 2.1, with the          *)
+(*   special exception on linking described in the file LICENSE.          *)
+(*                                                                        *)
+(**************************************************************************)
 
 (** Facilities for printing exceptions and inspecting current call stack. *)
 
@@ -209,6 +211,14 @@ module Slot : sig
       @since 4.02
   *)
 
+  val is_inline : t -> bool
+  (** [is_inline slot] is [true] when [slot] refers to a call
+      that got inlined by the compiler, and [false] when it comes from
+      any other context.
+
+      @since 4.04.0
+  *)
+
   val location : t -> location option
   (** [location slot] returns the location information of the slot,
       if available, and [None] otherwise.
@@ -274,6 +284,12 @@ val convert_raw_backtrace_slot : raw_backtrace_slot -> backtrace_slot
     @since 4.02
 *)
 
+
+val get_raw_backtrace_next_slot : raw_backtrace_slot -> raw_backtrace_slot option
+(** [get_raw_backtrace_next_slot slot] returns the next slot inlined, if any.
+
+    @since 4.04.0
+*)
 
 (** {6 Exception slots} *)
 

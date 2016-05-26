@@ -1,14 +1,17 @@
-(***********************************************************************)
-(*                                                                     *)
-(*                                OCaml                                *)
-(*                                                                     *)
-(*         Fabrice Le Fessant, projet Gallium, INRIA Rocquencourt      *)
-(*                                                                     *)
-(*  Copyright 2014 Institut National de Recherche en Informatique et   *)
-(*  en Automatique.  All rights reserved.  This file is distributed    *)
-(*  under the terms of the Q Public License version 1.0.               *)
-(*                                                                     *)
-(***********************************************************************)
+(**************************************************************************)
+(*                                                                        *)
+(*                                 OCaml                                  *)
+(*                                                                        *)
+(*          Fabrice Le Fessant, projet Gallium, INRIA Rocquencourt        *)
+(*                                                                        *)
+(*   Copyright 2014 Institut National de Recherche en Informatique et     *)
+(*     en Automatique.                                                    *)
+(*                                                                        *)
+(*   All rights reserved.  This file is distributed under the terms of    *)
+(*   the GNU Lesser General Public License version 2.1, with the          *)
+(*   special exception on linking described in the file LICENSE.          *)
+(*                                                                        *)
+(**************************************************************************)
 
 (** Structured representation of Intel assembly language (32 and 64 bit). *)
 
@@ -205,9 +208,9 @@ type asm_line =
   | Cfi_adjust_cfa_offset of int
   | Cfi_endproc
   | Cfi_startproc
-  | File of int * string (* file_num * filename *)
+  | File of int * string (* (file_num, file_name) *)
   | Indirect_symbol of string
-  | Loc of int * int (* file_num x line *)
+  | Loc of int * int * int (* (file_num, line, col) *)
   | Private_extern of string
   | Set of string * constant
   | Size of string * constant

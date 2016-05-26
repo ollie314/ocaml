@@ -1,14 +1,17 @@
-(***********************************************************************)
-(*                                                                     *)
-(*                                OCaml                                *)
-(*                                                                     *)
-(*         Fabrice Le Fessant, projet Gallium, INRIA Rocquencourt      *)
-(*                                                                     *)
-(*  Copyright 2014 Institut National de Recherche en Informatique et   *)
-(*  en Automatique.  All rights reserved.  This file is distributed    *)
-(*  under the terms of the Q Public License version 1.0.               *)
-(*                                                                     *)
-(***********************************************************************)
+(**************************************************************************)
+(*                                                                        *)
+(*                                 OCaml                                  *)
+(*                                                                        *)
+(*          Fabrice Le Fessant, projet Gallium, INRIA Rocquencourt        *)
+(*                                                                        *)
+(*   Copyright 2014 Institut National de Recherche en Informatique et     *)
+(*     en Automatique.                                                    *)
+(*                                                                        *)
+(*   All rights reserved.  This file is distributed under the terms of    *)
+(*   the GNU Lesser General Public License version 2.1, with the          *)
+(*   special exception on linking described in the file LICENSE.          *)
+(*                                                                        *)
+(**************************************************************************)
 
 
 (** Definitions shared between the 32 and 64 bit Intel backends. *)
@@ -27,7 +30,8 @@ val string_of_string_literal: string -> string
 val string_of_condition: condition -> string
 val string_of_symbol: (*prefix*) string -> string -> string
 val string_of_rounding: rounding -> string
-val buf_bytes_directive: Buffer.t -> (*directive*) string -> (*data*)string -> unit
+val buf_bytes_directive:
+  Buffer.t -> (*directive*) string -> (*data*)string -> unit
 
 
 (** Buffer of assembly code *)

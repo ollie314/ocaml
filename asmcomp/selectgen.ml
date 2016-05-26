@@ -1,14 +1,17 @@
-(***********************************************************************)
-(*                                                                     *)
-(*                                OCaml                                *)
-(*                                                                     *)
-(*            Xavier Leroy, projet Cristal, INRIA Rocquencourt         *)
-(*                                                                     *)
-(*  Copyright 1996 Institut National de Recherche en Informatique et   *)
-(*  en Automatique.  All rights reserved.  This file is distributed    *)
-(*  under the terms of the Q Public License version 1.0.               *)
-(*                                                                     *)
-(***********************************************************************)
+(**************************************************************************)
+(*                                                                        *)
+(*                                 OCaml                                  *)
+(*                                                                        *)
+(*             Xavier Leroy, projet Cristal, INRIA Rocquencourt           *)
+(*                                                                        *)
+(*   Copyright 1996 Institut National de Recherche en Informatique et     *)
+(*     en Automatique.                                                    *)
+(*                                                                        *)
+(*   All rights reserved.  This file is distributed under the terms of    *)
+(*   the GNU Lesser General Public License version 2.1, with the          *)
+(*   special exception on linking described in the file LICENSE.          *)
+(*                                                                        *)
+(**************************************************************************)
 
 (* Selection of pseudo-instructions, assignment of pseudo-registers,
    sequentialization. *)
@@ -24,19 +27,20 @@ type environment = (Ident.t, Reg.t array) Tbl.t
 
 let oper_result_type = function
     Capply(ty, _) -> ty
-  | Cextcall(s, ty, alloc, _) -> ty
+  | Cextcall(_s, ty, _alloc, _) -> ty
   | Cload c ->
       begin match c with
-        Word -> typ_addr
+      | Word_val -> typ_val
       | Single | Double | Double_u -> typ_float
       | _ -> typ_int
       end
-  | Calloc -> typ_addr
-  | Cstore c -> typ_void
+  | Calloc -> typ_val
+  | Cstore _ -> typ_void
   | Caddi | Csubi | Cmuli | Cmulhi | Cdivi | Cmodi |
     Cand | Cor | Cxor | Clsl | Clsr | Casr |
     Ccmpi _ | Ccmpa _ | Ccmpf _ -> typ_int
-  | Cadda | Csuba -> typ_addr
+  | Caddv -> typ_val
+  | Cadda -> typ_addr
   | Cnegf | Cabsf | Caddf | Csubf | Cmulf | Cdivf -> typ_float
   | Cfloatofint -> typ_float
   | Cintoffloat -> typ_int
@@ -65,11 +69,11 @@ let size_expr env exp =
         end
     | Ctuple el ->
         List.fold_right (fun e sz -> size localenv e + sz) el 0
-    | Cop(op, args) ->
+    | Cop(op, _) ->
         size_machtype(oper_result_type op)
     | Clet(id, arg, body) ->
         size (Tbl.add id (size localenv arg) localenv) body
-    | Csequence(e1, e2) ->
+    | Csequence(_e1, e2) ->
         size localenv e2
     | _ ->
         fatal_error "Selection.size_expr"
@@ -113,14 +117,19 @@ let join opt_r1 seq1 opt_r2 seq2 =
       assert (l1 = Array.length r2);
       let r = Array.make l1 Reg.dummy in
       for i = 0 to l1-1 do
-        if Reg.anonymous r1.(i) then begin
+        if Reg.anonymous r1.(i)
+          && Cmm.ge_component r1.(i).typ r2.(i).typ
+        then begin
           r.(i) <- r1.(i);
           seq2#insert_move r2.(i) r1.(i)
-        end else if Reg.anonymous r2.(i) then begin
+        end else if Reg.anonymous r2.(i)
+          && Cmm.ge_component r2.(i).typ r1.(i).typ
+        then begin
           r.(i) <- r2.(i);
           seq1#insert_move r1.(i) r2.(i)
         end else begin
-          r.(i) <- Reg.create r1.(i).typ;
+          let typ = Cmm.lub_component r1.(i).typ r2.(i).typ in
+          r.(i) <- Reg.create typ;
           seq1#insert_move r1.(i) r.(i);
           seq2#insert_move r2.(i) r.(i)
         end
@@ -132,7 +141,7 @@ let join opt_r1 seq1 opt_r2 seq2 =
 let join_array rs =
   let some_res = ref None in
   for i = 0 to Array.length rs - 1 do
-    let (r, s) = rs.(i) in
+    let (r, _) = rs.(i) in
     if r <> None then some_res := r
   done;
   match !some_res with
@@ -186,7 +195,7 @@ method is_simple_expr = function
   | Cconst_natpointer _ -> true
   | Cvar _ -> true
   | Ctuple el -> List.for_all self#is_simple_expr el
-  | Clet(id, arg, body) -> self#is_simple_expr arg && self#is_simple_expr body
+  | Clet(_id, arg, body) -> self#is_simple_expr arg && self#is_simple_expr body
   | Csequence(e1, e2) -> self#is_simple_expr e1 && self#is_simple_expr e2
   | Cop(op, args) ->
       begin match op with
@@ -210,7 +219,7 @@ method virtual select_addressing :
 (* Default instruction selection for stores (of words) *)
 
 method select_store is_assign addr arg =
-  (Istore(Word, addr, is_assign), arg)
+  (Istore(Word_val, addr, is_assign), arg)
 
 (* call marking methods, documented in selectgen.mli *)
 
@@ -247,19 +256,24 @@ method mark_instr = function
 
 method select_operation op args =
   match (op, args) with
-    (Capply(ty, dbg), Cconst_symbol s :: rem) -> (Icall_imm s, rem)
-  | (Capply(ty, dbg), _) -> (Icall_ind, args)
-  | (Cextcall(s, ty, alloc, dbg), _) -> (Iextcall(s, alloc), args)
+    (Capply _, Cconst_symbol s :: rem) -> (Icall_imm s, rem)
+  | (Capply _, _) -> (Icall_ind, args)
+  | (Cextcall(s, _ty, alloc, _dbg), _) -> (Iextcall(s, alloc), args)
   | (Cload chunk, [arg]) ->
       let (addr, eloc) = self#select_addressing chunk arg in
       (Iload(chunk, addr), [eloc])
-  | (Cstore chunk, [arg1; arg2]) ->
+  | (Cstore (chunk, init), [arg1; arg2]) ->
       let (addr, eloc) = self#select_addressing chunk arg1 in
-      if chunk = Word then begin
-        let (op, newarg2) = self#select_store true addr arg2 in
+      let is_assign =
+        match init with
+        | Lambda.Initialization -> false
+        | Lambda.Assignment -> true
+      in
+      if chunk = Word_int || chunk = Word_val then begin
+        let (op, newarg2) = self#select_store is_assign addr arg2 in
         (op, [newarg2; eloc])
       end else begin
-        (Istore(chunk, addr, true), [arg2; eloc])
+        (Istore(chunk, addr, is_assign), [arg2; eloc])
         (* Inversion addr/datum in Istore *)
       end
   | (Calloc, _) -> (Ialloc 0, args)
@@ -276,8 +290,8 @@ method select_operation op args =
   | (Clsr, _) -> self#select_shift Ilsr args
   | (Casr, _) -> self#select_shift Iasr args
   | (Ccmpi comp, _) -> self#select_arith_comp (Isigned comp) args
+  | (Caddv, _) -> self#select_arith_comm Iadd args
   | (Cadda, _) -> self#select_arith_comm Iadd args
-  | (Csuba, _) -> self#select_arith Isub args
   | (Ccmpa comp, _) -> self#select_arith_comp (Iunsigned comp) args
   | (Cnegf, _) -> (Inegf, args)
   | (Cabsf, _) -> (Iabsf, args)
@@ -395,14 +409,14 @@ method insert_moves src dst =
 
 (* Adjust the types of destination pseudoregs for a [Cassign] assignment.
    The type inferred at [let] binding might be [Int] while we assign
-   something of type [Addr] (PR#6501). *)
+   something of type [Val] (PR#6501). *)
 
 method adjust_type src dst =
   let ts = src.typ and td = dst.typ in
   if ts <> td then
     match ts, td with
-    | Addr, Int -> dst.typ <- Addr
-    | Int, Addr -> ()
+    | Val, Int -> dst.typ <- Val
+    | Int, Val -> ()
     | _, _ -> fatal_error("Selection.adjust_type: bad assignment to "
                                                            ^ Reg.name dst)
 
@@ -448,15 +462,15 @@ method emit_expr env exp =
       Some(self#insert_op (Iconst_blockheader n) [||] r)
   | Cconst_float n ->
       let r = self#regs_for typ_float in
-      Some(self#insert_op (Iconst_float n) [||] r)
+      Some(self#insert_op (Iconst_float (Int64.bits_of_float n)) [||] r)
   | Cconst_symbol n ->
-      let r = self#regs_for typ_addr in
+      let r = self#regs_for typ_val in
       Some(self#insert_op (Iconst_symbol n) [||] r)
   | Cconst_pointer n ->
-      let r = self#regs_for typ_addr in
+      let r = self#regs_for typ_val in  (* integer as Caml value *)
       Some(self#insert_op (Iconst_int(Nativeint.of_int n)) [||] r)
   | Cconst_natpointer n ->
-      let r = self#regs_for typ_addr in
+      let r = self#regs_for typ_val in  (* integer as Caml value *)
       Some(self#insert_op (Iconst_int n) [||] r)
   | Cvar v ->
       begin try
@@ -496,7 +510,7 @@ method emit_expr env exp =
           self#insert_debug (Iraise k) dbg rd [||];
           None
       end
-  | Cop(Ccmpf comp, args) ->
+  | Cop(Ccmpf _, _) ->
       self#emit_expr env (Cifthenelse(exp, Cconst_int 1, Cconst_int 0))
   | Cop(op, args) ->
       begin match self#emit_parts_list env args with
@@ -527,15 +541,14 @@ method emit_expr env exp =
               self#insert_move_results loc_res rd stack_ofs;
               Some rd
           | Iextcall(lbl, alloc) ->
-              let (loc_arg, stack_ofs) =
-                self#emit_extcall_args env new_args in
+              let (loc_arg, stack_ofs) = self#emit_extcall_args env new_args in
               let rd = self#regs_for ty in
               let loc_res = self#insert_op_debug (Iextcall(lbl, alloc)) dbg
                                     loc_arg (Proc.loc_external_results rd) in
               self#insert_move_results loc_res rd stack_ofs;
               Some rd
           | Ialloc _ ->
-              let rd = self#regs_for typ_addr in
+              let rd = self#regs_for typ_val in
               let size = size_expr env (Ctuple new_args) in
               self#insert (Iop(Ialloc size)) [||] rd;
               self#emit_stores env new_args rd;
@@ -548,7 +561,7 @@ method emit_expr env exp =
   | Csequence(e1, e2) ->
       begin match self#emit_expr env e1 with
         None -> None
-      | Some r1 -> self#emit_expr env e2
+      | Some _ -> self#emit_expr env e2
       end
   | Cifthenelse(econd, eif, eelse) ->
       let (cond, earg) = self#select_condition econd in
@@ -569,19 +582,19 @@ method emit_expr env exp =
           let rscases = Array.map (self#emit_sequence env) ecases in
           let r = join_array rscases in
           self#insert (Iswitch(index,
-                               Array.map (fun (r, s) -> s#extract) rscases))
+                               Array.map (fun (_, s) -> s#extract) rscases))
                       rsel [||];
           r
       end
   | Cloop(ebody) ->
-      let (rarg, sbody) = self#emit_sequence env ebody in
+      let (_rarg, sbody) = self#emit_sequence env ebody in
       self#insert (Iloop(sbody#extract)) [||] [||];
       Some [||]
   | Ccatch(nfail, ids, e1, e2) ->
       let rs =
         List.map
           (fun id ->
-            let r = self#regs_for typ_addr in name_regs id r; r)
+            let r = self#regs_for typ_val in name_regs id r; r)
           ids in
       catch_regs := (nfail, Array.concat rs) :: !catch_regs ;
       let (r1, s1) = self#emit_sequence env e1 in
@@ -610,7 +623,7 @@ method emit_expr env exp =
       end
   | Ctrywith(e1, v, e2) ->
       let (r1, s1) = self#emit_sequence env e1 in
-      let rv = self#regs_for typ_addr in
+      let rv = self#regs_for typ_val in
       let (r2, s2) = self#emit_sequence (Tbl.add v rv env) e2 in
       let r = join r1 s1 r2 s2 in
       self#insert
@@ -673,7 +686,7 @@ method private emit_parts_list env exp_list =
             None -> None
           | Some(new_exp, fin_env) -> Some(new_exp :: new_rem, fin_env)
 
-method private emit_tuple env exp_list =
+method private emit_tuple_not_flattened env exp_list =
   let rec emit_list = function
     [] -> []
   | exp :: rem ->
@@ -681,14 +694,26 @@ method private emit_tuple env exp_list =
       let loc_rem = emit_list rem in
       match self#emit_expr env exp with
         None -> assert false  (* should have been caught in emit_parts *)
-      | Some loc_exp -> loc_exp :: loc_rem in
-  Array.concat(emit_list exp_list)
+      | Some loc_exp -> loc_exp :: loc_rem
+  in
+  emit_list exp_list
+
+method private emit_tuple env exp_list =
+  Array.concat (self#emit_tuple_not_flattened env exp_list)
 
 method emit_extcall_args env args =
-  let r1 = self#emit_tuple env args in
-  let (loc_arg, stack_ofs as arg_stack) = Proc.loc_external_arguments r1 in
-  self#insert_move_args r1 loc_arg stack_ofs;
-  arg_stack
+  let args = self#emit_tuple_not_flattened env args in
+  let arg_hard_regs, stack_ofs =
+    Proc.loc_external_arguments (Array.of_list args)
+  in
+  (* Flattening [args] and [arg_hard_regs] causes parts of values split
+     across multiple registers to line up correctly, by virtue of the
+     semantics of [split_int64_for_32bit_target] in cmmgen.ml, and the
+     required semantics of [loc_external_arguments] (see proc.mli). *)
+  let args = Array.concat args in
+  let arg_hard_regs = Array.concat (Array.to_list arg_hard_regs) in
+  self#insert_move_args args arg_hard_regs stack_ofs;
+  arg_hard_regs, stack_ofs
 
 method emit_stores env data regs_addr =
   let a =
@@ -703,7 +728,7 @@ method emit_stores env data regs_addr =
             Istore(_, _, _) ->
               for i = 0 to Array.length regs - 1 do
                 let r = regs.(i) in
-                let kind = if r.typ = Float then Double_u else Word in
+                let kind = if r.typ = Float then Double_u else Word_val in
                 self#insert (Iop(Istore(kind, !a, false)))
                             (Array.append [|r|] regs_addr) [||];
                 a := Arch.offset_addressing !a (size_component r.typ)
@@ -776,7 +801,7 @@ method emit_tail env exp =
   | Csequence(e1, e2) ->
       begin match self#emit_expr env e1 with
         None -> ()
-      | Some r1 -> self#emit_tail env e2
+      | Some _ -> self#emit_tail env e2
       end
   | Cifthenelse(econd, eif, eelse) ->
       let (cond, earg) = self#select_condition econd in
@@ -799,7 +824,7 @@ method emit_tail env exp =
        let rs =
         List.map
           (fun id ->
-            let r = self#regs_for typ_addr in
+            let r = self#regs_for typ_val in
             name_regs id r  ;
             r)
           ids in
@@ -814,7 +839,7 @@ method emit_tail env exp =
       self#insert (Icatch(nfail, s1, s2)) [||] [||]
   | Ctrywith(e1, v, e2) ->
       let (opt_r1, s1) = self#emit_sequence env e1 in
-      let rv = self#regs_for typ_addr in
+      let rv = self#regs_for typ_val in
       let s2 = self#emit_tail_sequence (Tbl.add v rv env) e2 in
       self#insert
         (Itrywith(s1#extract,
@@ -848,7 +873,7 @@ method emit_fundecl f =
   let loc_arg = Proc.loc_parameters rarg in
   let env =
     List.fold_right2
-      (fun (id, ty) r env -> Tbl.add id r env)
+      (fun (id, _ty) r env -> Tbl.add id r env)
       f.Cmm.fun_args rargs Tbl.empty in
   self#insert_moves loc_arg rarg;
   self#emit_tail env f.Cmm.fun_body;
@@ -870,7 +895,7 @@ end
 let is_tail_call nargs =
   assert (Reg.dummy.typ = Int);
   let args = Array.make (nargs + 1) Reg.dummy in
-  let (loc_arg, stack_ofs) = Proc.loc_arguments args in
+  let (_loc_arg, stack_ofs) = Proc.loc_arguments args in
   stack_ofs = 0
 
 let _ =

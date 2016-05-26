@@ -1,15 +1,17 @@
-(***********************************************************************)
-(*                                                                     *)
-(*                                OCaml                                *)
-(*                                                                     *)
-(*          Damien Doligez, projet Gallium, INRIA Rocquencourt         *)
-(*                                                                     *)
-(*  Copyright 2014 Institut National de Recherche en Informatique et   *)
-(*  en Automatique.  All rights reserved.  This file is distributed    *)
-(*  under the terms of the GNU Library General Public License, with    *)
-(*  the special exception on linking described in file ../LICENSE.     *)
-(*                                                                     *)
-(***********************************************************************)
+(**************************************************************************)
+(*                                                                        *)
+(*                                 OCaml                                  *)
+(*                                                                        *)
+(*           Damien Doligez, projet Gallium, INRIA Rocquencourt           *)
+(*                                                                        *)
+(*   Copyright 2014 Institut National de Recherche en Informatique et     *)
+(*     en Automatique.                                                    *)
+(*                                                                        *)
+(*   All rights reserved.  This file is distributed under the terms of    *)
+(*   the GNU Lesser General Public License version 2.1, with the          *)
+(*   special exception on linking described in the file LICENSE.          *)
+(*                                                                        *)
+(**************************************************************************)
 
 (* String operations, based on byte sequence operations *)
 
@@ -20,9 +22,9 @@ external create : int -> bytes = "caml_create_string"
 external unsafe_get : string -> int -> char = "%string_unsafe_get"
 external unsafe_set : bytes -> int -> char -> unit = "%string_unsafe_set"
 external unsafe_blit : string -> int ->  bytes -> int -> int -> unit
-                     = "caml_blit_string" "noalloc"
+                     = "caml_blit_string" [@@noalloc]
 external unsafe_fill : bytes -> int -> int -> char -> unit
-                     = "caml_fill_string" "noalloc"
+                     = "caml_fill_string" [@@noalloc]
 
 module B = Bytes
 
@@ -87,7 +89,7 @@ let escaped s =
   let rec needs_escape i =
     if i >= length s then false else
       match unsafe_get s i with
-      | '"' | '\\' | '\n' | '\t' | '\r' | '\b' -> true
+      | '\"' | '\\' | '\n' | '\t' | '\r' | '\b' -> true
       | ' ' .. '~' -> needs_escape (i+1)
       | _ -> true
   in

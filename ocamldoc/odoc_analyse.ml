@@ -1,14 +1,17 @@
-(***********************************************************************)
-(*                                                                     *)
-(*                             OCamldoc                                *)
-(*                                                                     *)
-(*            Maxence Guesdon, projet Cristal, INRIA Rocquencourt      *)
-(*                                                                     *)
-(*  Copyright 2001 Institut National de Recherche en Informatique et   *)
-(*  en Automatique.  All rights reserved.  This file is distributed    *)
-(*  under the terms of the Q Public License version 1.0.               *)
-(*                                                                     *)
-(***********************************************************************)
+(**************************************************************************)
+(*                                                                        *)
+(*                                 OCaml                                  *)
+(*                                                                        *)
+(*             Maxence Guesdon, projet Cristal, INRIA Rocquencourt        *)
+(*                                                                        *)
+(*   Copyright 2001 Institut National de Recherche en Informatique et     *)
+(*     en Automatique.                                                    *)
+(*                                                                        *)
+(*   All rights reserved.  This file is distributed under the terms of    *)
+(*   the GNU Lesser General Public License version 2.1, with the          *)
+(*   special exception on linking described in the file LICENSE.          *)
+(*                                                                        *)
+(**************************************************************************)
 
 (** Analysis of source files. This module is strongly inspired from
     driver/main.ml :-) *)
@@ -16,7 +19,6 @@
 let print_DEBUG s = print_string s ; print_newline ()
 
 open Config
-open Clflags
 open Misc
 open Format
 open Typedtree
@@ -52,14 +54,19 @@ let preprocess sourcefile =
       Pparse.report_error err;
     exit 2
 
-let (++) x f = f x
-
 (** Analysis of an implementation file. Returns (Some typedtree) if
    no error occured, else None and an error message is printed.*)
 
 let tool_name = "ocamldoc"
 
-let process_implementation_file ppf sourcefile =
+(** Deactivate the generation of docstrings in the lexer *)
+let no_docstring f x =
+  Lexer.handle_docstrings := false;
+  let result = f x in
+  Lexer.handle_docstrings := true;
+  result
+
+let process_implementation_file sourcefile =
   init_path ();
   let prefixname = Filename.chop_extension sourcefile in
   let modulename = String.capitalize_ascii(Filename.basename prefixname) in
@@ -69,7 +76,7 @@ let process_implementation_file ppf sourcefile =
   try
     let parsetree =
       Pparse.file ~tool_name Format.err_formatter inputfile
-        Parse.implementation ast_impl_magic_number
+        (no_docstring Parse.implementation) ast_impl_magic_number
     in
     let typedtree =
       Typemod.type_implementation
@@ -92,7 +99,7 @@ let process_implementation_file ppf sourcefile =
 
 (** Analysis of an interface file. Returns (Some signature) if
    no error occured, else None and an error message is printed.*)
-let process_interface_file ppf sourcefile =
+let process_interface_file sourcefile =
   init_path ();
   let prefixname = Filename.chop_extension sourcefile in
   let modulename = String.capitalize_ascii(Filename.basename prefixname) in
@@ -100,7 +107,7 @@ let process_interface_file ppf sourcefile =
   let inputfile = preprocess sourcefile in
   let ast =
     Pparse.file ~tool_name Format.err_formatter inputfile
-      Parse.interface ast_intf_magic_number
+      (no_docstring Parse.interface) ast_intf_magic_number
   in
   let sg = Typemod.type_interface (initial_env()) ast in
   Warnings.check_fatal ();
@@ -124,7 +131,7 @@ let process_error exn =
         (Printexc.to_string exn)
 
 (** Process the given file, according to its extension. Return the Module.t created, if any.*)
-let process_file ppf sourcefile =
+let process_file sourcefile =
   if !Odoc_global.verbose then
     (
      let f = match sourcefile with
@@ -140,7 +147,7 @@ let process_file ppf sourcefile =
       (
        Location.input_name := file;
        try
-         let (parsetree_typedtree_opt, input_file) = process_implementation_file ppf file in
+         let (parsetree_typedtree_opt, input_file) = process_implementation_file file in
          match parsetree_typedtree_opt with
            None ->
              None
@@ -172,7 +179,7 @@ let process_file ppf sourcefile =
       (
        Location.input_name := file;
        try
-         let (ast, signat, input_file) = process_interface_file ppf file in
+         let (ast, signat, input_file) = process_interface_file file in
          let file_module = Sig_analyser.analyse_signature file
              !Location.input_name ast signat.sig_type
          in
@@ -384,7 +391,7 @@ let analyse_files ?(init=[]) files =
     (List.fold_left
        (fun acc -> fun file ->
          try
-           match process_file Format.err_formatter file with
+           match process_file file with
              None ->
                acc
            | Some m ->
@@ -431,7 +438,7 @@ let analyse_files ?(init=[]) files =
      print_string Odoc_messages.cross_referencing;
      print_newline ()
     );
-  let _ = Odoc_cross.associate modules_list in
+  Odoc_cross.associate modules_list;
 
   if !Odoc_global.verbose then
     (

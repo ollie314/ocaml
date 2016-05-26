@@ -1,15 +1,17 @@
-/***********************************************************************/
-/*                                                                     */
-/*                                OCaml                                */
-/*                                                                     */
-/*           Xavier Leroy, projet Cristal, INRIA Rocquencourt          */
-/*                                                                     */
-/*  Copyright 2001 Institut National de Recherche en Informatique et   */
-/*  en Automatique.  All rights reserved.  This file is distributed    */
-/*  under the terms of the GNU Library General Public License, with    */
-/*  the special exception on linking described in file ../LICENSE.     */
-/*                                                                     */
-/***********************************************************************/
+/**************************************************************************/
+/*                                                                        */
+/*                                 OCaml                                  */
+/*                                                                        */
+/*            Xavier Leroy, projet Cristal, INRIA Rocquencourt            */
+/*                                                                        */
+/*   Copyright 2001 Institut National de Recherche en Informatique et     */
+/*     en Automatique.                                                    */
+/*                                                                        */
+/*   All rights reserved.  This file is distributed under the terms of    */
+/*   the GNU Lesser General Public License version 2.1, with the          */
+/*   special exception on linking described in the file LICENSE.          */
+/*                                                                        */
+/**************************************************************************/
 
 /* Unix-specific stuff */
 
@@ -21,10 +23,11 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <errno.h>
 #include <fcntl.h>
 #include "caml/config.h"
 #ifdef SUPPORT_DYNAMIC_LINKING
-#ifdef __CYGWIN32__
+#ifdef __CYGWIN__
 #include "flexdll.h"
 #else
 #include <dlfcn.h>
@@ -38,13 +41,61 @@
 #else
 #include <sys/dir.h>
 #endif
+#include "caml/fail.h"
 #include "caml/memory.h"
 #include "caml/misc.h"
 #include "caml/osdeps.h"
+#include "caml/signals.h"
+#include "caml/sys.h"
 
 #ifndef S_ISREG
 #define S_ISREG(mode) (((mode) & S_IFMT) == S_IFREG)
 #endif
+
+#ifndef EINTR
+#define EINTR (-1)
+#endif
+#ifndef EAGAIN
+#define EAGAIN (-1)
+#endif
+#ifndef EWOULDBLOCK
+#define EWOULDBLOCK (-1)
+#endif
+
+int caml_read_fd(int fd, int flags, void * buf, int n)
+{
+  int retcode;
+  do {
+    caml_enter_blocking_section();
+    retcode = read(fd, buf, n);
+    caml_leave_blocking_section();
+  } while (retcode == -1 && errno == EINTR);
+  if (retcode == -1) caml_sys_io_error(NO_ARG);
+  return retcode;
+}
+
+int caml_write_fd(int fd, int flags, void * buf, int n)
+{
+  int retcode;
+ again:
+  caml_enter_blocking_section();
+  retcode = write(fd, buf, n);
+  caml_leave_blocking_section();
+  if (retcode == -1) {
+    if (errno == EINTR) goto again;
+    if ((errno == EAGAIN || errno == EWOULDBLOCK) && n > 1) {
+      /* We couldn't do a partial write here, probably because
+         n <= PIPE_BUF and POSIX says that writes of less than
+         PIPE_BUF characters must be atomic.
+         We first try again with a partial write of 1 character.
+         If that fails too, we'll return an error code. */
+      n = 1; goto again;
+    }
+  }
+  if (retcode == -1) caml_sys_io_error(NO_ARG);
+  CAMLassert (retcode > 0);
+  return retcode;
+}
 
 char * caml_decompose_path(struct ext_table * tbl, char * path)
 {
@@ -86,7 +137,7 @@ char * caml_search_in_path(struct ext_table * path, char * name)
   return caml_strdup(name);
 }
 
-#ifdef __CYGWIN32__
+#ifdef __CYGWIN__
 
 /* Cygwin needs special treatment because of the implicit ".exe" at the
    end of executable file names */
@@ -137,7 +188,7 @@ char * caml_search_exe_in_path(char * name)
 
   caml_ext_table_init(&path, 8);
   tofree = caml_decompose_path(&path, getenv("PATH"));
-#ifndef __CYGWIN32__
+#ifndef __CYGWIN__
   res = caml_search_in_path(&path, name);
 #else
   res = cygwin_search_exe_in_path(&path, name);
@@ -159,7 +210,7 @@ char * caml_search_dll_in_path(struct ext_table * path, char * name)
 }
 
 #ifdef SUPPORT_DYNAMIC_LINKING
-#ifdef __CYGWIN32__
+#ifdef __CYGWIN__
 /* Use flexdll */
 
 void * caml_dlopen(char * libname, int for_execution, int global)

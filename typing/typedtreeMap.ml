@@ -1,14 +1,17 @@
-(***********************************************************************)
-(*                                                                     *)
-(*                                OCaml                                *)
-(*                                                                     *)
-(*                  Fabrice Le Fessant, INRIA Saclay                   *)
-(*                                                                     *)
-(*  Copyright 2012 Institut National de Recherche en Informatique et   *)
-(*  en Automatique.  All rights reserved.  This file is distributed    *)
-(*  under the terms of the Q Public License version 1.0.               *)
-(*                                                                     *)
-(***********************************************************************)
+(**************************************************************************)
+(*                                                                        *)
+(*                                 OCaml                                  *)
+(*                                                                        *)
+(*                   Fabrice Le Fessant, INRIA Saclay                     *)
+(*                                                                        *)
+(*   Copyright 2012 Institut National de Recherche en Informatique et     *)
+(*     en Automatique.                                                    *)
+(*                                                                        *)
+(*   All rights reserved.  This file is distributed under the terms of    *)
+(*   the GNU Lesser General Public License version 2.1, with the          *)
+(*   special exception on linking described in the file LICENSE.          *)
+(*                                                                        *)
+(**************************************************************************)
 
 open Typedtree
 
@@ -24,7 +27,8 @@ module type MapArgument = sig
   val enter_package_type : package_type -> package_type
   val enter_signature : signature -> signature
   val enter_signature_item : signature_item -> signature_item
-  val enter_module_type_declaration : module_type_declaration -> module_type_declaration
+  val enter_module_type_declaration :
+      module_type_declaration -> module_type_declaration
   val enter_module_type : module_type -> module_type
   val enter_module_expr : module_expr -> module_expr
   val enter_with_constraint : with_constraint -> with_constraint
@@ -52,7 +56,8 @@ module type MapArgument = sig
   val leave_package_type : package_type -> package_type
   val leave_signature : signature -> signature
   val leave_signature_item : signature_item -> signature_item
-  val leave_module_type_declaration : module_type_declaration -> module_type_declaration
+  val leave_module_type_declaration :
+      module_type_declaration -> module_type_declaration
   val leave_module_type : module_type -> module_type
   val leave_module_expr : module_expr -> module_expr
   val leave_with_constraint : with_constraint -> with_constraint
@@ -74,12 +79,6 @@ end
 
 module MakeMap(Map : MapArgument) = struct
 
-  let may_map f v =
-    match v with
-        None -> v
-      | Some x -> Some (f x)
-
-
   open Misc
 
   let rec map_structure str =
@@ -95,7 +94,7 @@ module MakeMap(Map : MapArgument) = struct
       vb_loc = vb.vb_loc;
     }
 
-  and map_bindings rec_flag list =
+  and map_bindings list =
     List.map map_binding list
 
   and map_case {c_lhs; c_guard; c_rhs} =
@@ -114,7 +113,7 @@ module MakeMap(Map : MapArgument) = struct
       match item.str_desc with
           Tstr_eval (exp, attrs) -> Tstr_eval (map_expression exp, attrs)
         | Tstr_value (rec_flag, list) ->
-          Tstr_value (rec_flag, map_bindings rec_flag list)
+          Tstr_value (rec_flag, map_bindings list)
         | Tstr_primitive vd ->
           Tstr_primitive (map_value_description vd)
         | Tstr_type (rf, list) ->
@@ -258,8 +257,9 @@ module MakeMap(Map : MapArgument) = struct
 
   and map_pat_extra pat_extra =
     match pat_extra with
-      | Tpat_constraint ct, loc, attrs -> (Tpat_constraint (map_core_type  ct), loc, attrs)
-      | (Tpat_type _ | Tpat_unpack), _, _ -> pat_extra
+      | Tpat_constraint ct, loc, attrs ->
+          (Tpat_constraint (map_core_type  ct), loc, attrs)
+      | (Tpat_type _ | Tpat_unpack | Tpat_open _ ), _, _ -> pat_extra
 
   and map_expression exp =
     let exp = Map.enter_expression exp in
@@ -269,19 +269,19 @@ module MakeMap(Map : MapArgument) = struct
         | Texp_constant _ -> exp.exp_desc
         | Texp_let (rec_flag, list, exp) ->
           Texp_let (rec_flag,
-                    map_bindings rec_flag list,
+                    map_bindings list,
                     map_expression exp)
         | Texp_function (label, cases, partial) ->
           Texp_function (label, map_cases cases, partial)
         | Texp_apply (exp, list) ->
           Texp_apply (map_expression exp,
-                      List.map (fun (label, expo, optional) ->
+                      List.map (fun (label, expo) ->
                         let expo =
                           match expo with
                               None -> expo
                             | Some exp -> Some (map_expression exp)
                         in
-                        (label, expo, optional)
+                        (label, expo)
                       ) list )
         | Texp_match (exp, list1, list2, partial) ->
           Texp_match (
@@ -354,8 +354,8 @@ module MakeMap(Map : MapArgument) = struct
           )
         | Texp_send (exp, meth, expo) ->
           Texp_send (map_expression exp, meth, may_map map_expression expo)
-        | Texp_new (path, lid, cl_decl) -> exp.exp_desc
-        | Texp_instvar (_, path, _) -> exp.exp_desc
+        | Texp_new _ -> exp.exp_desc
+        | Texp_instvar _ -> exp.exp_desc
         | Texp_setinstvar (path, lid, path2, exp) ->
           Texp_setinstvar (path, lid, path2, map_expression exp)
         | Texp_override (path, list) ->
@@ -371,12 +371,21 @@ module MakeMap(Map : MapArgument) = struct
             map_module_expr mexpr,
             map_expression exp
           )
+        | Texp_letexception (cd, exp) ->
+          Texp_letexception (
+            map_extension_constructor cd,
+            map_expression exp
+          )
         | Texp_assert exp -> Texp_assert (map_expression exp)
         | Texp_lazy exp -> Texp_lazy (map_expression exp)
         | Texp_object (cl, string_list) ->
           Texp_object (map_class_structure cl, string_list)
         | Texp_pack (mexpr) ->
           Texp_pack (map_module_expr mexpr)
+        | Texp_unreachable ->
+          Texp_unreachable
+        | Texp_extension_constructor _ as e ->
+          e
     in
     let exp_extra = List.map map_exp_extra exp.exp_extra in
     Map.leave_expression {
@@ -417,27 +426,28 @@ module MakeMap(Map : MapArgument) = struct
       match item.sig_desc with
           Tsig_value vd ->
             Tsig_value (map_value_description vd)
-        | Tsig_type (rf, list) -> Tsig_type (rf, List.map map_type_declaration list)
+        | Tsig_type (rf, list) ->
+            Tsig_type (rf, List.map map_type_declaration list)
         | Tsig_typext tyext ->
-          Tsig_typext (map_type_extension tyext)
+            Tsig_typext (map_type_extension tyext)
         | Tsig_exception ext ->
-          Tsig_exception (map_extension_constructor ext)
+            Tsig_exception (map_extension_constructor ext)
         | Tsig_module md ->
-          Tsig_module {md with md_type = map_module_type md.md_type}
+            Tsig_module {md with md_type = map_module_type md.md_type}
         | Tsig_recmodule list ->
-          Tsig_recmodule
-              (List.map
-                 (fun md -> {md with md_type = map_module_type md.md_type})
-                 list
-              )
+            Tsig_recmodule
+                (List.map
+                   (fun md -> {md with md_type = map_module_type md.md_type})
+                   list
+                )
         | Tsig_modtype mtd ->
-          Tsig_modtype (map_module_type_declaration mtd)
+            Tsig_modtype (map_module_type_declaration mtd)
         | Tsig_open _ -> item.sig_desc
         | Tsig_include incl ->
-          Tsig_include {incl with incl_mod = map_module_type incl.incl_mod}
+            Tsig_include {incl with incl_mod = map_module_type incl.incl_mod}
         | Tsig_class list -> Tsig_class (List.map map_class_description list)
         | Tsig_class_type list ->
-          Tsig_class_type (List.map map_class_type_declaration list)
+            Tsig_class_type (List.map map_class_type_declaration list)
         | Tsig_attribute _ as x -> x
     in
     Map.leave_signature_item { item with sig_desc = sig_desc }
@@ -494,8 +504,8 @@ module MakeMap(Map : MapArgument) = struct
       match cstr with
           Twith_type decl -> Twith_type (map_type_declaration decl)
         | Twith_typesubst decl -> Twith_typesubst (map_type_declaration decl)
-        | Twith_module (path, lid) -> cstr
-        | Twith_modsubst (path, lid) -> cstr
+        | Twith_module _ -> cstr
+        | Twith_modsubst _ -> cstr
     in
     Map.leave_with_constraint cstr
 
@@ -503,7 +513,7 @@ module MakeMap(Map : MapArgument) = struct
     let mexpr = Map.enter_module_expr mexpr in
     let mod_desc =
       match mexpr.mod_desc with
-          Tmod_ident (p, lid) -> mexpr.mod_desc
+          Tmod_ident _ -> mexpr.mod_desc
         | Tmod_structure st -> Tmod_structure (map_structure st)
         | Tmod_functor (id, name, mtype, mexpr) ->
           Tmod_functor (id, name, Misc.may_map map_module_type mtype,
@@ -539,12 +549,11 @@ module MakeMap(Map : MapArgument) = struct
 
         | Tcl_apply (cl, args) ->
           Tcl_apply (map_class_expr cl,
-                     List.map (fun (label, expo, optional) ->
-                       (label, may_map map_expression expo,
-                        optional)
+                     List.map (fun (label, expo) ->
+                       (label, may_map map_expression expo)
                      ) args)
-        | Tcl_let (rec_flat, bindings, ivars, cl) ->
-          Tcl_let (rec_flat, map_bindings rec_flat bindings,
+        | Tcl_let (rec_flag, bindings, ivars, cl) ->
+          Tcl_let (rec_flag, map_bindings bindings,
                    List.map (fun (id, name, exp) ->
                      (id, name, map_expression exp)) ivars,
                    map_class_expr cl)

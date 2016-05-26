@@ -1,15 +1,17 @@
-(***********************************************************************)
-(*                                                                     *)
-(*                                OCaml                                *)
-(*                                                                     *)
-(*            Xavier Leroy, projet Cristal, INRIA Rocquencourt         *)
-(*                                                                     *)
-(*  Copyright 1996 Institut National de Recherche en Informatique et   *)
-(*  en Automatique.  All rights reserved.  This file is distributed    *)
-(*  under the terms of the GNU Library General Public License, with    *)
-(*  the special exception on linking described in file ../LICENSE.     *)
-(*                                                                     *)
-(***********************************************************************)
+(**************************************************************************)
+(*                                                                        *)
+(*                                 OCaml                                  *)
+(*                                                                        *)
+(*             Xavier Leroy, projet Cristal, INRIA Rocquencourt           *)
+(*                                                                        *)
+(*   Copyright 1996 Institut National de Recherche en Informatique et     *)
+(*     en Automatique.                                                    *)
+(*                                                                        *)
+(*   All rights reserved.  This file is distributed under the terms of    *)
+(*   the GNU Lesser General Public License version 2.1, with the          *)
+(*   special exception on linking described in the file LICENSE.          *)
+(*                                                                        *)
+(**************************************************************************)
 
 (** System interface.
 
@@ -17,6 +19,13 @@
   informative message when the underlying system call signal
   an error.
 *)
+
+type backend_type = 
+  | Native
+  | Bytecode
+  | Other of string 
+(** Currently, the official distribution only supports [Native] and [Bytecode], 
+    but it can be other backends with alternative compilers, for example, javascript *)
 
 val argv : string array
 (** The command line arguments given to the process.
@@ -53,7 +62,8 @@ external getenv : string -> string = "caml_sys_getenv"
 external command : string -> int = "caml_sys_system_command"
 (** Execute the given shell command and return its exit code. *)
 
-external time : unit -> float = "caml_sys_time"
+external time : unit -> (float [@unboxed]) =
+  "caml_sys_time" "caml_sys_time_unboxed" [@@noalloc]
 (** Return the processor time, in seconds, used by the program
    since the beginning of execution. *)
 
@@ -82,6 +92,11 @@ val os_type : string
 -  ["Unix"] (for all Unix versions, including Linux and Mac OS X),
 -  ["Win32"] (for MS-Windows, OCaml compiled with MSVC++ or Mingw),
 -  ["Cygwin"] (for MS-Windows, OCaml compiled with Cygwin). *)
+
+val backend_type : backend_type
+(** Backend type  currently executing the OCaml program. 
+    @ since 4.04.0
+ *)
 
 val unix : bool
 (** True if [Sys.os_type = "Unix"].
@@ -117,6 +132,17 @@ val max_array_length : int
 (** Maximum length of a normal array.  The maximum length of a float
     array is [max_array_length/2] on 32-bit machines and
     [max_array_length] on 64-bit machines. *)
+
+external runtime_variant : unit -> string = "caml_runtime_variant"
+(** Return the name of the runtime variant the program is running on.
+    This is normally the argument given to [-runtime-variant] at compile
+    time, but for byte-code it can be changed after compilation.
+    @since 4.03.0 *)
+
+external runtime_parameters : unit -> string = "caml_runtime_parameters"
+(** Return the value of the runtime parameters, in the same format
+    as the contents of the [OCAMLRUNPARAM] environment variable.
+    @since 4.03.0 *)
 
 
 (** {6 Signal handling} *)
@@ -210,6 +236,34 @@ val sigvtalrm : int
 val sigprof : int
 (** Profiling interrupt *)
 
+val sigbus : int
+(** Bus error
+    @since 4.03 *)
+
+val sigpoll : int
+(** Pollable event
+    @since 4.03 *)
+
+val sigsys : int
+(** Bad argument to routine
+    @since 4.03 *)
+
+val sigtrap : int
+(** Trace/breakpoint trap
+    @since 4.03 *)
+
+val sigurg : int
+(** Urgent condition on socket
+    @since 4.03 *)
+
+val sigxcpu : int
+(** Timeout in cpu time
+    @since 4.03 *)
+
+val sigxfsz : int
+(** File size limit exceeded
+    @since 4.03 *)
+
 
 exception Break
 (** Exception raised on interactive interrupt if {!Sys.catch_break}
@@ -224,9 +278,42 @@ val catch_break : bool -> unit
    terminate the program on user interrupt. *)
 
 
-val ocaml_version : string;;
+val ocaml_version : string
 (** [ocaml_version] is the version of OCaml.
     It is a string of the form ["major.minor[.patchlevel][+additional-info]"],
     where [major], [minor], and [patchlevel] are integers, and
     [additional-info] is an arbitrary string. The [[.patchlevel]] and
     [[+additional-info]] parts may be absent. *)
+
+
+val enable_runtime_warnings: bool -> unit
+(** Control whether the OCaml runtime system can emit warnings
+    on stderr.  Currently, the only supported warning is triggered
+    when a channel created by [open_*] functions is finalized without
+    being closed.  Runtime warnings are enabled by default.
+
+    @since 4.03.0 *)
+
+val runtime_warnings_enabled: unit -> bool
+(** Return whether runtime warnings are currently enabled.
+
+    @since 4.03.0 *)
+
+(** {6 Optimization} *)
+
+external opaque_identity : 'a -> 'a = "%opaque"
+(** For the purposes of optimization, [opaque_identity] behaves like an
+    unknown (and thus possibly side-effecting) function.
+
+    At runtime, [opaque_identity] disappears altogether.
+
+    A typical use of this function is to prevent pure computations from being
+    optimized away in benchmarking loops.  For example:
+    {[
+      for _round = 1 to 100_000 do
+        ignore (Sys.opaque_identity (my_pure_computation ()))
+      done
+    ]}
+
+    @since 4.03.0
+*)

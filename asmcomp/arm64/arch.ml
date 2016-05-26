@@ -1,18 +1,19 @@
-(***********************************************************************)
-(*                                                                     *)
-(*                                OCaml                                *)
-(*                                                                     *)
-(*            Xavier Leroy, projet Gallium, INRIA Rocquencourt         *)
-(*                  Benedikt Meurer, University of Siegen              *)
-(*                                                                     *)
-(*    Copyright 2013 Institut National de Recherche en Informatique    *)
-(*    et en Automatique. Copyright 2012 Benedikt Meurer. All rights    *)
-(*    reserved.  This file is distributed  under the terms of the Q    *)
-(*    Public License version 1.0.                                      *)
-(*                                                                     *)
-(***********************************************************************)
-
-let command_line_options = []
+(**************************************************************************)
+(*                                                                        *)
+(*                                 OCaml                                  *)
+(*                                                                        *)
+(*             Xavier Leroy, projet Gallium, INRIA Rocquencourt           *)
+(*                 Benedikt Meurer, University of Siegen                  *)
+(*                                                                        *)
+(*   Copyright 2013 Institut National de Recherche en Informatique et     *)
+(*     en Automatique.                                                    *)
+(*   Copyright 2012 Benedikt Meurer.                                      *)
+(*                                                                        *)
+(*   All rights reserved.  This file is distributed under the terms of    *)
+(*   the GNU Lesser General Public License version 2.1, with the          *)
+(*   special exception on linking described in the file LICENSE.          *)
+(*                                                                        *)
+(**************************************************************************)
 
 (* Specific operations for the ARM processor, 64-bit mode *)
 
@@ -34,8 +35,12 @@ type addressing_mode =
 (* Specific operations *)
 
 type specific_operation =
+  | Ifar_alloc of int
+  | Ifar_intop_checkbound
+  | Ifar_intop_imm_checkbound of int
   | Ishiftarith of arith_operation * int
   | Ishiftcheckbound of int
+  | Ifar_shiftcheckbound of int
   | Imuladd       (* multiply and add *)
   | Imulsub       (* multiply and subtract *)
   | Inegmulf      (* floating-point negate and multiply *)
@@ -74,8 +79,8 @@ let offset_addressing addr delta =
   | Ibased(s, n) -> Ibased(s, n + delta)
 
 let num_args_addressing = function
-  | Iindexed n -> 1
-  | Ibased(s, n) -> 0
+  | Iindexed _ -> 1
+  | Ibased _ -> 0
 
 (* Printing operations and addressing modes *)
 
@@ -91,6 +96,12 @@ let print_addressing printreg addr ppf arg =
 
 let print_specific_operation printreg op ppf arg =
   match op with
+  | Ifar_alloc n ->
+    fprintf ppf "(far) alloc %i" n
+  | Ifar_intop_checkbound ->
+    fprintf ppf "%a (far) check > %a" printreg arg.(0) printreg arg.(1)
+  | Ifar_intop_imm_checkbound n ->
+    fprintf ppf "%a (far) check > %i" printreg arg.(0) n
   | Ishiftarith(op, shift) ->
       let op_name = function
       | Ishiftadd -> "+"
@@ -103,6 +114,9 @@ let print_specific_operation printreg op ppf arg =
        printreg arg.(0) (op_name op) printreg arg.(1) shift_mark
   | Ishiftcheckbound n ->
       fprintf ppf "check %a >> %i > %a" printreg arg.(0) n printreg arg.(1)
+  | Ifar_shiftcheckbound n ->
+      fprintf ppf
+        "(far) check %a >> %i > %a" printreg arg.(0) n printreg arg.(1)
   | Imuladd ->
       fprintf ppf "(%a * %a) + %a"
         printreg arg.(0)

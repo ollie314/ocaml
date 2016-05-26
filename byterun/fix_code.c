@@ -1,15 +1,17 @@
-/***********************************************************************/
-/*                                                                     */
-/*                                OCaml                                */
-/*                                                                     */
-/*            Xavier Leroy, projet Cristal, INRIA Rocquencourt         */
-/*                                                                     */
-/*  Copyright 1996 Institut National de Recherche en Informatique et   */
-/*  en Automatique.  All rights reserved.  This file is distributed    */
-/*  under the terms of the GNU Library General Public License, with    */
-/*  the special exception on linking described in file ../LICENSE.     */
-/*                                                                     */
-/***********************************************************************/
+/**************************************************************************/
+/*                                                                        */
+/*                                 OCaml                                  */
+/*                                                                        */
+/*             Xavier Leroy, projet Cristal, INRIA Rocquencourt           */
+/*                                                                        */
+/*   Copyright 1996 Institut National de Recherche en Informatique et     */
+/*     en Automatique.                                                    */
+/*                                                                        */
+/*   All rights reserved.  This file is distributed under the terms of    */
+/*   the GNU Lesser General Public License version 2.1, with the          */
+/*   special exception on linking described in the file LICENSE.          */
+/*                                                                        */
+/**************************************************************************/
 
 /* Handling of blocks of bytecode (endianness switch, threading). */
 
@@ -35,7 +37,7 @@ unsigned char * caml_saved_code;
 
 /* Read the main bytecode block from a file */
 
-void caml_init_code_fragments() {
+void caml_init_code_fragments(void) {
   struct code_fragment * cf;
   /* Register the code in the table of code fragments */
   cf = caml_stat_alloc(sizeof(struct code_fragment));
@@ -95,33 +97,44 @@ void caml_fixup_endianness(code_t code, asize_t len)
 char ** caml_instr_table;
 char * caml_instr_base;
 
+static int* opcode_nargs = NULL;
+int* caml_init_opcode_nargs(void)
+{
+  if( opcode_nargs == NULL ){
+    int* l = (int*)caml_stat_alloc(sizeof(int) * FIRST_UNIMPLEMENTED_OP);
+    int i;
+
+    for (i = 0; i < FIRST_UNIMPLEMENTED_OP; i++) {
+      l [i] = 0;
+    }
+    /* Instructions with one operand */
+    l[PUSHACC] = l[ACC] = l[POP] = l[ASSIGN] =
+      l[PUSHENVACC] = l[ENVACC] = l[PUSH_RETADDR] = l[APPLY] =
+      l[APPTERM1] = l[APPTERM2] = l[APPTERM3] = l[RETURN] =
+      l[GRAB] = l[PUSHGETGLOBAL] = l[GETGLOBAL] = l[SETGLOBAL] =
+      l[PUSHATOM] = l[ATOM] = l[MAKEBLOCK1] = l[MAKEBLOCK2] =
+      l[MAKEBLOCK3] = l[MAKEFLOATBLOCK] = l[GETFIELD] =
+      l[GETFLOATFIELD] = l[SETFIELD] = l[SETFLOATFIELD] =
+      l[BRANCH] = l[BRANCHIF] = l[BRANCHIFNOT] = l[PUSHTRAP] =
+      l[C_CALL1] = l[C_CALL2] = l[C_CALL3] = l[C_CALL4] = l[C_CALL5] =
+      l[CONSTINT] = l[PUSHCONSTINT] = l[OFFSETINT] =
+      l[OFFSETREF] = l[OFFSETCLOSURE] = l[PUSHOFFSETCLOSURE] = 1;
+
+    /* Instructions with two operands */
+    l[APPTERM] = l[CLOSURE] = l[PUSHGETGLOBALFIELD] =
+      l[GETGLOBALFIELD] = l[MAKEBLOCK] = l[C_CALLN] =
+      l[BEQ] = l[BNEQ] = l[BLTINT] = l[BLEINT] = l[BGTINT] = l[BGEINT] =
+      l[BULTINT] = l[BUGEINT] = l[GETPUBMET] = 2;
+
+    opcode_nargs = l;
+  }
+  return opcode_nargs;
+}
+
 void caml_thread_code (code_t code, asize_t len)
 {
   code_t p;
-  int l [FIRST_UNIMPLEMENTED_OP];
-  int i;
-
-  for (i = 0; i < FIRST_UNIMPLEMENTED_OP; i++) {
-    l [i] = 0;
-  }
-  /* Instructions with one operand */
-  l[PUSHACC] = l[ACC] = l[POP] = l[ASSIGN] =
-  l[PUSHENVACC] = l[ENVACC] = l[PUSH_RETADDR] = l[APPLY] =
-  l[APPTERM1] = l[APPTERM2] = l[APPTERM3] = l[RETURN] =
-  l[GRAB] = l[PUSHGETGLOBAL] = l[GETGLOBAL] = l[SETGLOBAL] =
-  l[PUSHATOM] = l[ATOM] = l[MAKEBLOCK1] = l[MAKEBLOCK2] =
-  l[MAKEBLOCK3] = l[MAKEFLOATBLOCK] = l[GETFIELD] =
-  l[GETFLOATFIELD] = l[SETFIELD] = l[SETFLOATFIELD] =
-  l[BRANCH] = l[BRANCHIF] = l[BRANCHIFNOT] = l[PUSHTRAP] =
-  l[C_CALL1] = l[C_CALL2] = l[C_CALL3] = l[C_CALL4] = l[C_CALL5] =
-  l[CONSTINT] = l[PUSHCONSTINT] = l[OFFSETINT] =
-  l[OFFSETREF] = l[OFFSETCLOSURE] = l[PUSHOFFSETCLOSURE] = 1;
-
-  /* Instructions with two operands */
-  l[APPTERM] = l[CLOSURE] = l[PUSHGETGLOBALFIELD] =
-  l[GETGLOBALFIELD] = l[MAKEBLOCK] = l[C_CALLN] =
-  l[BEQ] = l[BNEQ] = l[BLTINT] = l[BLEINT] = l[BGTINT] = l[BGEINT] =
-  l[BULTINT] = l[BUGEINT] = l[GETPUBMET] = 2;
+  int* l = caml_init_opcode_nargs();
   len /= sizeof(opcode_t);
   for (p = code; p < code + len; /*nothing*/) {
     opcode_t instr = *p;
@@ -147,6 +160,13 @@ void caml_thread_code (code_t code, asize_t len)
     }
   }
   Assert(p == code + len);
+}
+
+#else
+
+int* caml_init_opcode_nargs()
+{
+  return NULL;
 }
 
 #endif /* THREADED_CODE */

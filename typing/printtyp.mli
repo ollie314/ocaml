@@ -1,14 +1,17 @@
-(***********************************************************************)
-(*                                                                     *)
-(*                                OCaml                                *)
-(*                                                                     *)
-(*            Xavier Leroy, projet Cristal, INRIA Rocquencourt         *)
-(*                                                                     *)
-(*  Copyright 1996 Institut National de Recherche en Informatique et   *)
-(*  en Automatique.  All rights reserved.  This file is distributed    *)
-(*  under the terms of the Q Public License version 1.0.               *)
-(*                                                                     *)
-(***********************************************************************)
+(**************************************************************************)
+(*                                                                        *)
+(*                                 OCaml                                  *)
+(*                                                                        *)
+(*             Xavier Leroy, projet Cristal, INRIA Rocquencourt           *)
+(*                                                                        *)
+(*   Copyright 1996 Institut National de Recherche en Informatique et     *)
+(*     en Automatique.                                                    *)
+(*                                                                        *)
+(*   All rights reserved.  This file is distributed under the terms of    *)
+(*   the GNU Lesser General Public License version 2.1, with the          *)
+(*   special exception on linking described in the file LICENSE.          *)
+(*                                                                        *)
+(**************************************************************************)
 
 (* Printing functions *)
 
@@ -41,7 +44,7 @@ val type_scheme: formatter -> type_expr -> unit
 val reset_names: unit -> unit
 val type_scheme_max: ?b_reset_names: bool ->
         formatter -> type_expr -> unit
-(* Fin Maxence *)
+(* End Maxence *)
 val tree_of_value_description: Ident.t -> value_description -> out_sig_item
 val value_description: Ident.t -> formatter -> value_description -> unit
 val tree_of_type_declaration:
@@ -51,7 +54,8 @@ val tree_of_extension_constructor:
     Ident.t -> extension_constructor -> ext_status -> out_sig_item
 val extension_constructor:
     Ident.t -> formatter -> extension_constructor -> unit
-val tree_of_module: Ident.t -> ?ellipsis:bool -> module_type -> rec_status -> out_sig_item
+val tree_of_module:
+    Ident.t -> ?ellipsis:bool -> module_type -> rec_status -> out_sig_item
 val modtype: formatter -> module_type -> unit
 val signature: formatter -> signature -> unit
 val tree_of_modtype_declaration:

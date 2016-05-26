@@ -1,15 +1,17 @@
-(***********************************************************************)
-(*                                                                     *)
-(*                                OCaml                                *)
-(*                                                                     *)
-(*            Xavier Leroy, projet Cristal, INRIA Rocquencourt         *)
-(*                                                                     *)
-(*  Copyright 1996 Institut National de Recherche en Informatique et   *)
-(*  en Automatique.  All rights reserved.  This file is distributed    *)
-(*  under the terms of the GNU Library General Public License, with    *)
-(*  the special exception on linking described in file ../LICENSE.     *)
-(*                                                                     *)
-(***********************************************************************)
+(**************************************************************************)
+(*                                                                        *)
+(*                                 OCaml                                  *)
+(*                                                                        *)
+(*             Xavier Leroy, projet Cristal, INRIA Rocquencourt           *)
+(*                                                                        *)
+(*   Copyright 1996 Institut National de Recherche en Informatique et     *)
+(*     en Automatique.                                                    *)
+(*                                                                        *)
+(*   All rights reserved.  This file is distributed under the terms of    *)
+(*   the GNU Lesser General Public License version 2.1, with the          *)
+(*   special exception on linking described in the file LICENSE.          *)
+(*                                                                        *)
+(**************************************************************************)
 
 (** Sets over ordered types.
 
@@ -46,6 +48,7 @@ module type OrderedType =
   sig
     type t
       (** The type of the set elements. *)
+
     val compare : t -> t -> int
       (** A total ordering function over the set elements.
           This is a two-argument function [f] such that
@@ -114,6 +117,17 @@ module type S =
     (** [iter f s] applies [f] in turn to all elements of [s].
        The elements of [s] are presented to [f] in increasing order
        with respect to the ordering over the type of the elements. *)
+
+    val map: (elt -> elt) -> t -> t
+    (** [map f s] is the set whose elements are [f a0],[f a1]... [f
+        aN], where [a0],[a1]...[aN] are the elements of [s].
+
+       The elements are passed to [f] in increasing order
+       with respect to the ordering over the type of the elements.
+
+       If no element of [s] is changed by [f], [s] is returned
+       unchanged. (If each output of [f] is physically equal to its
+       input, the returned set is physically equal to [s].) *)
 
     val fold: (elt -> 'a -> 'a) -> t -> 'a -> 'a
     (** [fold f s a] computes [(f xN ... (f x2 (f x1 a))...)],

@@ -1,15 +1,3 @@
-(***********************************************************************)
-(*                                                                     *)
-(*                                OCaml                                *)
-(*                                                                     *)
-(*            Xavier Leroy, projet Gallium, INRIA Rocquencourt         *)
-(*                                                                     *)
-(*  Copyright 2012 Institut National de Recherche en Informatique et   *)
-(*  en Automatique.  All rights reserved.  This file is distributed    *)
-(*  under the terms of the Q Public License version 1.0.               *)
-(*                                                                     *)
-(***********************************************************************)
-
 module S = Set.Make(struct type t = int let compare (x:t) y = compare x y end)
 
 let testvals = [0;1;2;3;4;5;6;7;8;9]
@@ -72,6 +60,17 @@ let test x s1 s2 =
     (let b = S.subset s1 s2 in
      b || not (S.is_empty (S.diff s1 s2)));
 
+  checkbool "map"
+    (S.elements (S.map succ s1) = List.map succ (S.elements s1));
+
+  checkbool "map2"
+    (S.map (fun x -> x) s1 == s1);
+
+  checkbool "map3"
+    ((* check that the traversal is made in increasing element order *)
+     let last = ref min_int in
+     S.map (fun x -> assert (!last <= x); last := x; x) s1 == s1);
+
   checkbool "for_all"
     (let p x = x mod 2 = 0 in
      S.for_all p s1 = List.for_all p (S.elements s1));
@@ -129,7 +128,7 @@ let rset() =
 
 let _ =
   Random.init 42;
-  for i = 1 to 25000 do test (relt()) (rset()) (rset()) done
+  for i = 1 to 10000 do test (relt()) (rset()) (rset()) done
 
 let () =
   (* #6645: check that adding an element to set that already contains

@@ -1,14 +1,17 @@
-(***********************************************************************)
-(*                                                                     *)
-(*                                OCaml                                *)
-(*                                                                     *)
-(* Xavier Leroy and Jerome Vouillon, projet Cristal, INRIA Rocquencourt*)
-(*                                                                     *)
-(*  Copyright 1996 Institut National de Recherche en Informatique et   *)
-(*  en Automatique.  All rights reserved.  This file is distributed    *)
-(*  under the terms of the Q Public License version 1.0.               *)
-(*                                                                     *)
-(***********************************************************************)
+(**************************************************************************)
+(*                                                                        *)
+(*                                 OCaml                                  *)
+(*                                                                        *)
+(*  Xavier Leroy and Jerome Vouillon, projet Cristal, INRIA Rocquencourt  *)
+(*                                                                        *)
+(*   Copyright 1996 Institut National de Recherche en Informatique et     *)
+(*     en Automatique.                                                    *)
+(*                                                                        *)
+(*   All rights reserved.  This file is distributed under the terms of    *)
+(*   the GNU Lesser General Public License version 2.1, with the          *)
+(*   special exception on linking described in the file LICENSE.          *)
+(*                                                                        *)
+(**************************************************************************)
 
 (* Printing functions *)
 
@@ -50,9 +53,9 @@ let ident_pervasive = Ident.create_persistent "Pervasives"
 let rec tree_of_path = function
   | Pident id ->
       Oide_ident (ident_name id)
-  | Pdot(Pident id, s, pos) when Ident.same id ident_pervasive ->
+  | Pdot(Pident id, s, _pos) when Ident.same id ident_pervasive ->
       Oide_ident s
-  | Pdot(p, s, pos) ->
+  | Pdot(p, s, _pos) ->
       Oide_dot (tree_of_path p, s)
   | Papply(p1, p2) ->
       Oide_apply (tree_of_path p1, tree_of_path p2)
@@ -60,9 +63,9 @@ let rec tree_of_path = function
 let rec path ppf = function
   | Pident id ->
       ident ppf id
-  | Pdot(Pident id, s, pos) when Ident.same id ident_pervasive ->
+  | Pdot(Pident id, s, _pos) when Ident.same id ident_pervasive ->
       pp_print_string ppf s
-  | Pdot(p, s, pos) ->
+  | Pdot(p, s, _pos) ->
       path ppf p;
       pp_print_char ppf '.';
       pp_print_string ppf s
@@ -115,7 +118,7 @@ let rec safe_repr v = function
 
 let rec list_of_memo = function
     Mnil -> []
-  | Mcons (priv, p, t1, t2, rem) -> p :: list_of_memo rem
+  | Mcons (_priv, p, _t1, _t2, rem) -> p :: list_of_memo rem
   | Mlink rem -> list_of_memo !rem
 
 let print_name ppf = function
@@ -229,20 +232,7 @@ let printing_depth = ref 0
 let printing_cont = ref ([] : Env.iter_cont list)
 let printing_old = ref Env.empty
 let printing_pers = ref Concr.empty
-module Path2 = struct
-  include Path
-  let rec compare p1 p2 =
-    (* must ignore position when comparing paths *)
-    match (p1, p2) with
-      (Pdot(p1, s1, pos1), Pdot(p2, s2, pos2)) ->
-        let c = compare p1 p2 in
-        if c <> 0 then c else String.compare s1 s2
-    | (Papply(fun1, arg1), Papply(fun2, arg2)) ->
-        let c = compare fun1 fun2 in
-        if c <> 0 then c else compare arg1 arg2
-    | _ -> Pervasives.compare p1 p2
-end
-module PathMap = Map.Make(Path2)
+module PathMap = Map.Make(Path)
 let printing_map = ref PathMap.empty
 
 let same_type t t' = repr t == repr t'
@@ -277,10 +267,21 @@ let rec normalize_type_path ?(cache=false) env p =
   with
     Not_found -> (p, Id)
 
+let penalty s =
+  if s <> "" && s.[0] = '_' then
+    10
+  else
+    try
+      for i = 0 to String.length s - 2 do
+        if s.[i] = '_' && s.[i + 1] = '_' then
+          raise Exit
+      done;
+      1
+    with Exit -> 10
+
 let rec path_size = function
     Pident id ->
-      (let s = Ident.name id in if s <> "" && s.[0] = '_' then 10 else 1),
-      -Ident.binding_time id
+      penalty (Ident.name id), -Ident.binding_time id
   | Pdot (p, _, _) ->
       let (l, b) = path_size p in (1+l, b)
   | Papply (p1, p2) ->
@@ -303,7 +304,7 @@ let set_printing_env env =
     (* printf "Recompute printing_map.@."; *)
     let cont =
       Env.iter_types
-        (fun p (p', decl) ->
+        (fun p (p', _decl) ->
           let (p1, s1) = normalize_type_path env p' ~cache:true in
           (* Format.eprintf "%a -> %a = %a@." path p path p' path p1 *)
           if s1 = Id then
@@ -360,7 +361,7 @@ let best_type_path p =
     let (p', s) = normalize_type_path !printing_env p in
     let get_path () = get_best_path (PathMap.find  p' !printing_map) in
     while !printing_cont <> [] &&
-      try ignore (get_path ()); false with Not_found -> true
+      try fst (path_size (get_path ())) > !printing_depth with Not_found -> true
     do
       printing_cont := List.map snd (Env.run_iter_cont !printing_cont);
       incr printing_depth;
@@ -426,13 +427,6 @@ let remove_names tyl =
   let tyl = List.map repr tyl in
   names := List.filter (fun (ty,_) -> not (List.memq ty tyl)) !names
 
-
-let non_gen_mark sch ty =
-  if sch && is_Tvar ty && ty.level <> generic_level then "_" else ""
-
-let print_name_of_type sch ppf t =
-  fprintf ppf "'%s%s" (non_gen_mark sch t) (name_of_type t)
-
 let visited_objects = ref ([] : type_expr list)
 let aliased = ref ([] : type_expr list)
 let delayed = ref ([] : type_expr list)
@@ -476,7 +470,7 @@ let rec mark_loops_rec visited ty =
         mark_loops_rec visited ty1; mark_loops_rec visited ty2
     | Ttuple tyl -> List.iter (mark_loops_rec visited) tyl
     | Tconstr(p, tyl, _) ->
-        let (p', s) = best_type_path p in
+        let (_p', s) = best_type_path p in
         List.iter (mark_loops_rec visited) (apply_subst s tyl)
     | Tpackage (_, _, tyl) ->
         List.iter (mark_loops_rec visited) tyl
@@ -487,7 +481,7 @@ let rec mark_loops_rec visited ty =
           if not (static_row row) then
             visited_objects := px :: !visited_objects;
           match row.row_name with
-          | Some(p, tyl) when namable_row row ->
+          | Some(_p, tyl) when namable_row row ->
               List.iter (mark_loops_rec visited) tyl
           | _ ->
               iter_row (mark_loops_rec visited) row
@@ -539,8 +533,6 @@ let reset_and_mark_loops_list tyl =
 
 (* Disabled in classic mode when printing an unification error *)
 let print_labels = ref true
-let print_label ppf l =
-  if !print_labels && l <> Nolabel || is_optional l then fprintf ppf "%s:" (string_of_label l)
 
 let rec tree_of_typexp sch ty =
   let ty = repr ty in
@@ -570,7 +562,7 @@ let rec tree_of_typexp sch ty =
         pr_arrow l ty1 ty2
     | Ttuple tyl ->
         Otyp_tuple (tree_of_typlist sch tyl)
-    | Tconstr(p, tyl, abbrev) ->
+    | Tconstr(p, tyl, _abbrev) ->
         let p', s = best_type_path p in
         let tyl' = apply_subst s tyl in
         if is_nth s then tree_of_typexp sch (List.hd tyl') else
@@ -661,10 +653,10 @@ and tree_of_row_field sch (l, f) =
   | Rpresent None | Reither(true, [], _, _) -> (l, false, [])
   | Rpresent(Some ty) -> (l, false, [tree_of_typexp sch ty])
   | Reither(c, tyl, _, _) ->
-      if c (* contradiction: un constructeur constant qui a un argument *)
+      if c (* contradiction: constant constructor with an argument *)
       then (l, true, tree_of_typlist sch tyl)
       else (l, false, tree_of_typlist sch tyl)
-  | Rabsent -> (l, false, [] (* une erreur, en fait *))
+  | Rabsent -> (l, false, [] (* actually, an error *))
 
 and tree_of_typlist sch tyl =
   List.map (tree_of_typexp sch) tyl
@@ -682,7 +674,8 @@ and tree_of_typobject sch fi nm =
                | _ -> l)
             fields [] in
         let sorted_fields =
-          List.sort (fun (n, _) (n', _) -> compare n n') present_fields in
+          List.sort
+            (fun (n, _) (n', _) -> String.compare n n') present_fields in
         tree_of_typfields sch rest sorted_fields in
       let (fields, rest) = pr_fields fi in
       Otyp_object (fields, rest)
@@ -714,20 +707,20 @@ and tree_of_typfields sch rest = function
       let (fields, rest) = tree_of_typfields sch rest l in
       (field :: fields, rest)
 
-let typexp sch prio ppf ty =
+let typexp sch ppf ty =
   !Oprint.out_type ppf (tree_of_typexp sch ty)
 
-let type_expr ppf ty = typexp false 0 ppf ty
+let type_expr ppf ty = typexp false ppf ty
 
-and type_sch ppf ty = typexp true 0 ppf ty
+and type_sch ppf ty = typexp true ppf ty
 
-and type_scheme ppf ty = reset_and_mark_loops ty; typexp true 0 ppf ty
+and type_scheme ppf ty = reset_and_mark_loops ty; typexp true ppf ty
 
 (* Maxence *)
 let type_scheme_max ?(b_reset_names=true) ppf ty =
   if b_reset_names then reset_names () ;
-  typexp true 0 ppf ty
-(* Fin Maxence *)
+  typexp true ppf ty
+(* End Maxence *)
 
 let tree_of_type_scheme ty = reset_and_mark_loops ty; tree_of_typexp true ty
 
@@ -752,11 +745,6 @@ let filter_params tyl =
         else ty :: tyl)
       [] tyl
   in List.rev params
-
-let string_of_mutable = function
-  | Immutable -> ""
-  | Mutable -> "mutable "
-
 
 let mark_loops_constructor_arguments = function
   | Cstr_tuple l -> List.iter mark_loops l
@@ -808,7 +796,7 @@ let rec tree_of_type_decl id decl =
            mark_loops_constructor_arguments c.cd_args;
            may mark_loops c.cd_res)
         cstrs
-  | Type_record(l, rep) ->
+  | Type_record(l, _rep) ->
       List.iter (fun l -> mark_loops l.ld_type) l
   | Type_open -> ()
   end;
@@ -860,17 +848,21 @@ let rec tree_of_type_decl id decl =
     | Type_variant cstrs ->
         tree_of_manifest (Otyp_sum (List.map tree_of_constructor cstrs)),
         decl.type_private
-    | Type_record(lbls, rep) ->
+    | Type_record(lbls, _rep) ->
         tree_of_manifest (Otyp_record (List.map tree_of_label lbls)),
         decl.type_private
     | Type_open ->
         tree_of_manifest Otyp_open,
         Public
   in
+  let immediate =
+    List.exists (fun (loc, _) -> loc.txt = "immediate") decl.type_attributes
+  in
     { otype_name = name;
       otype_params = args;
       otype_type = ty;
       otype_private = priv;
+      otype_immediate = immediate;
       otype_cstrs = constraints }
 
 and tree_of_constructor_arguments = function
@@ -959,21 +951,23 @@ let tree_of_value_description id decl =
   (* Format.eprintf "@[%a@]@." raw_type_expr decl.val_type; *)
   let id = Ident.name id in
   let ty = tree_of_type_scheme decl.val_type in
-  let prims =
-    match decl.val_kind with
-    | Val_prim p -> Primitive.description_list p
-    | _ -> []
+  let vd =
+    { oval_name = id;
+      oval_type = ty;
+      oval_prims = [];
+      oval_attributes = [] }
   in
-  Osig_value (id, ty, prims)
+  let vd =
+    match decl.val_kind with
+    | Val_prim p -> Primitive.print p vd
+    | _ -> vd
+  in
+  Osig_value vd
 
 let value_description id ppf decl =
   !Oprint.out_sig_item ppf (tree_of_value_description id decl)
 
 (* Print a class type *)
-
-let class_var sch ppf l (m, t) =
-  fprintf ppf
-    "@ @[<2>val %s%s :@ %a@]" (string_of_mutable m) l (typexp sch 0) t
 
 let method_type (_, kind, ty) =
   match field_kind_repr kind, repr ty with
@@ -993,7 +987,7 @@ let tree_of_metho sch concrete csil (lab, kind, ty) =
   else csil
 
 let rec prepare_class_type params = function
-  | Cty_constr (p, tyl, cty) ->
+  | Cty_constr (_p, tyl, cty) ->
       let sty = Ctype.self_type cty in
       if List.memq (proxy sty) !visited_objects
       || not (List.for_all is_Tvar params)
@@ -1058,7 +1052,9 @@ let rec tree_of_class_type sch params =
       in
       Octy_signature (self_ty, List.rev csil)
   | Cty_arrow (l, ty, cty) ->
-      let lab = if !print_labels || is_optional l then string_of_label l else "" in
+      let lab =
+        if !print_labels || is_optional l then string_of_label l else ""
+      in
       let ty =
        if is_optional l then
          match (repr ty).desc with
@@ -1078,10 +1074,6 @@ let tree_of_class_param param variance =
     Otyp_var (_, s) -> s
   | _ -> "?"),
   if is_Tvar (repr param) then (true, true) else variance
-
-let tree_of_class_params params =
-  let tyl = tree_of_typlist true params in
-  List.map (function Otyp_var (_, s) -> s | _ -> "?") tyl
 
 let class_variance =
   List.map Variance.(fun v -> mem May_pos v, mem May_neg v)
@@ -1126,7 +1118,7 @@ let tree_of_cltype_declaration id cl rs =
     let (fields, _) =
       Ctype.flatten_fields (Ctype.object_fields sign.csig_self) in
     List.exists
-      (fun (lab, _, ty) ->
+      (fun (lab, _, _) ->
          not (lab = dummy_method || Concr.mem lab sign.csig_concr))
       fields
     || Vars.fold (fun _ (_,vr,_) b -> vr = Virtual || b) sign.csig_vars false
@@ -1164,10 +1156,11 @@ let dummy =
     type_private = Public; type_manifest = None; type_variance = [];
     type_newtype_level = None; type_loc = Location.none;
     type_attributes = [];
+    type_immediate = false;
   }
 
 let hide_rec_items = function
-  | Sig_type(id, decl, rs) ::rem
+  | Sig_type(id, _decl, rs) ::rem
     when rs = Trec_first && not !Clflags.real_paths ->
       let rec get_ids = function
           Sig_type (id, _, Trec_next) :: rem ->
@@ -1185,14 +1178,17 @@ let rec tree_of_modtype ?(ellipsis=false) = function
   | Mty_ident p ->
       Omty_ident (tree_of_path p)
   | Mty_signature sg ->
-      Omty_signature (if ellipsis then [Osig_ellipsis] else tree_of_signature sg)
+      Omty_signature (if ellipsis then [Osig_ellipsis]
+                      else tree_of_signature sg)
   | Mty_functor(param, ty_arg, ty_res) ->
       let res =
         match ty_arg with None -> tree_of_modtype ~ellipsis ty_res
         | Some mty ->
-            wrap_env (Env.add_module ~arg:true param mty) (tree_of_modtype ~ellipsis) ty_res
+            wrap_env (Env.add_module ~arg:true param mty)
+                     (tree_of_modtype ~ellipsis) ty_res
       in
-      Omty_functor (Ident.name param, may_map (tree_of_modtype ~ellipsis:false) ty_arg, res)
+      Omty_functor (Ident.name param,
+                    may_map (tree_of_modtype ~ellipsis:false) ty_arg, res)
   | Mty_alias p ->
       Omty_alias (tree_of_path p)
 
@@ -1205,7 +1201,8 @@ and tree_of_signature_rec env' in_type_group = function
       let in_type_group =
         match in_type_group, item with
           true, Sig_type (_, _, Trec_next) -> true
-        | _, Sig_type (_, _, (Trec_not | Trec_first)) -> set_printing_env env'; true
+        | _, Sig_type (_, _, (Trec_not | Trec_first)) ->
+            set_printing_env env'; true
         | _ -> set_printing_env env'; false
       in
       let (sg, rem) = filter_rem_sig item rem in
@@ -1225,7 +1222,8 @@ and trees_of_sigitem = function
       [tree_of_extension_constructor id ext es]
   | Sig_module(id, md, rs) ->
       let ellipsis =
-        List.exists (function ({txt="..."}, Parsetree.PStr []) -> true | _ -> false)
+        List.exists (function ({txt="..."}, Parsetree.PStr []) -> true
+                            | _ -> false)
           md.md_attributes in
       [tree_of_module id md.md_type rs ~ellipsis]
   | Sig_modtype(id, decl) ->
@@ -1254,7 +1252,7 @@ let modtype_declaration id ppf decl =
 let rec print_items showval env = function
   | [] -> []
   | item :: rem as items ->
-      let (sg, rem) = filter_rem_sig item rem in
+      let (_sg, rem) = filter_rem_sig item rem in
       hide_rec_items items;
       let trees = trees_of_sigitem item in
       List.map (fun d -> (d, showval env item)) trees @
@@ -1288,7 +1286,9 @@ let same_path t t' =
       false
 
 let type_expansion t ppf t' =
-  if same_path t t' then type_expr ppf t else
+  if same_path t t'
+  then begin add_delayed (proxy t); type_expr ppf t end
+  else
   let t' = if proxy t == proxy t' then unalias t' else t' in
   fprintf ppf "@[<2>%a@ =@ %a@]" type_expr t type_expr t'
 
@@ -1350,7 +1350,7 @@ let print_tags ppf fields =
       fprintf ppf "`%s" t;
       List.iter (fun (t, _) -> fprintf ppf ",@ `%s" t) fields
 
-let has_explanation unif t3 t4 =
+let has_explanation t3 t4 =
   match t3.desc, t4.desc with
     Tfield _, (Tnil|Tconstr _) | (Tnil|Tconstr _), Tfield _
   | Tnil, Tconstr _ | Tconstr _, Tnil
@@ -1359,12 +1359,12 @@ let has_explanation unif t3 t4 =
   | Tfield (l,_,_,{desc=Tnil}), Tfield (l',_,_,{desc=Tnil}) -> l = l'
   | _ -> false
 
-let rec mismatch unif = function
+let rec mismatch = function
     (_, t) :: (_, t') :: rem ->
-      begin match mismatch unif rem with
+      begin match mismatch rem with
         Some _ as m -> m
       | None ->
-          if has_explanation unif t t' then Some(t,t') else None
+          if has_explanation t t' then Some(t,t') else None
       end
   | [] -> None
   | _ -> assert false
@@ -1373,12 +1373,12 @@ let explanation unif t3 t4 ppf =
   match t3.desc, t4.desc with
   | Ttuple [], Tvar _ | Tvar _, Ttuple [] ->
       fprintf ppf "@,Self type cannot escape its class"
-  | Tconstr (p, tl, _), Tvar _
+  | Tconstr (p, _, _), Tvar _
     when unif && t4.level < Path.binding_time p ->
       fprintf ppf
         "@,@[The type constructor@;<1 2>%a@ would escape its scope@]"
         path p
-  | Tvar _, Tconstr (p, tl, _)
+  | Tvar _, Tconstr (p, _, _)
     when unif && t3.level < Path.binding_time p ->
       fprintf ppf
         "@,@[The type constructor@;<1 2>%a@ would escape its scope@]"
@@ -1395,7 +1395,9 @@ let explanation unif t3 t4 ppf =
         fprintf ppf "@,@[<hov>This instance of %a is ambiguous:@ %s@]"
           type_expr t'
           "it would escape the scope of its equation"
-  | Tfield (lab, _, _, _), _
+  | Tfield (lab, _, _, _), _ when lab = dummy_method ->
+      fprintf ppf
+        "@,Self type cannot be unified with a closed object type"
   | _, Tfield (lab, _, _, _) when lab = dummy_method ->
       fprintf ppf
         "@,Self type cannot be unified with a closed object type"
@@ -1417,11 +1419,11 @@ let explanation unif t3 t4 ppf =
         row1.row_fields, row1.row_closed, row2.row_fields, row2.row_closed with
       | [], true, [], true ->
           fprintf ppf "@,These two variant types have no intersection"
-      | [], true, fields, _ ->
+      | [], true, (_::_ as fields), _ ->
           fprintf ppf
             "@,@[The first variant type does not allow tag(s)@ @[<hov>%a@]@]"
             print_tags fields
-      | fields, _, [], true ->
+      | (_::_ as fields), _, [], true ->
           fprintf ppf
             "@,@[The second variant type does not allow tag(s)@ @[<hov>%a@]@]"
             print_tags fields
@@ -1429,6 +1431,20 @@ let explanation unif t3 t4 ppf =
           fprintf ppf "@,Types for tag `%s are incompatible" l1
       | _ -> ()
       end
+  | _ -> ()
+
+
+let warn_on_missing_def env ppf t =
+  match t.desc with
+  | Tconstr (p,_,_) ->
+    begin
+      try
+        ignore(Env.find_type p env : Types.type_declaration)
+      with Not_found ->
+        fprintf ppf
+          "@,@[%a is abstract because no corresponding cmi file was found \
+           in path.@]" path p
+    end
   | _ -> ()
 
 let explanation unif mis ppf =
@@ -1460,11 +1476,11 @@ let rec trace_same_names = function
       type_same_name t1 t2; type_same_name t1' t2'; trace_same_names rem
   | _ -> ()
 
-let unification_error unif tr txt1 ppf txt2 =
+let unification_error env unif tr txt1 ppf txt2 =
   reset ();
   trace_same_names tr;
   let tr = List.map (fun (t, t') -> (t, hide_variant_name t')) tr in
-  let mis = mismatch unif tr in
+  let mis = mismatch tr in
   match tr with
   | [] | _ :: [] -> assert false
   | t1 :: t2 :: tr ->
@@ -1484,6 +1500,11 @@ let unification_error unif tr txt1 ppf txt2 =
         txt2 (type_expansion t2) t2'
         (trace false "is not compatible with type") tr
         (explanation unif mis);
+      if env <> Env.empty
+      then begin
+        warn_on_missing_def env ppf t1;
+        warn_on_missing_def env ppf t2
+      end;
       print_labels := true
     with exn ->
       print_labels := true;
@@ -1491,7 +1512,7 @@ let unification_error unif tr txt1 ppf txt2 =
 
 let report_unification_error ppf env ?(unif=true)
     tr txt1 txt2 =
-  wrap_printing_env env (fun () -> unification_error unif tr txt1 ppf txt2)
+  wrap_printing_env env (fun () -> unification_error env unif tr txt1 ppf txt2)
 ;;
 
 let trace fst keep_last txt ppf tr =
@@ -1514,7 +1535,7 @@ let report_subtyping_error ppf env tr1 txt1 tr2 =
     and tr2 = List.map prepare_expansion tr2 in
     fprintf ppf "@[<v>%a" (trace true (tr2 = []) txt1) tr1;
     if tr2 = [] then fprintf ppf "@]" else
-    let mis = mismatch true tr2 in
+    let mis = mismatch tr2 in
     fprintf ppf "%a%t@]"
       (trace false (mis = None) "is not compatible with type") tr2
       (explanation true mis))

@@ -1,15 +1,18 @@
-(***********************************************************************)
-(*                                                                     *)
-(*                                OCaml                                *)
-(*                                                                     *)
-(*          Jerome Vouillon, projet Cristal, INRIA Rocquencourt        *)
-(*          OCaml port by John Malecki and Xavier Leroy                *)
-(*                                                                     *)
-(*  Copyright 1996 Institut National de Recherche en Informatique et   *)
-(*  en Automatique.  All rights reserved.  This file is distributed    *)
-(*  under the terms of the Q Public License version 1.0.               *)
-(*                                                                     *)
-(***********************************************************************)
+(**************************************************************************)
+(*                                                                        *)
+(*                                 OCaml                                  *)
+(*                                                                        *)
+(*           Jerome Vouillon, projet Cristal, INRIA Rocquencourt          *)
+(*           OCaml port by John Malecki and Xavier Leroy                  *)
+(*                                                                        *)
+(*   Copyright 1996 Institut National de Recherche en Informatique et     *)
+(*     en Automatique.                                                    *)
+(*                                                                        *)
+(*   All rights reserved.  This file is distributed under the terms of    *)
+(*   the GNU Lesser General Public License version 2.1, with the          *)
+(*   special exception on linking described in the file LICENSE.          *)
+(*                                                                        *)
+(**************************************************************************)
 
 open Misc
 open Types
@@ -79,6 +82,12 @@ let rec env_from_summary sum subst =
           Env.add_module_declaration id (Subst.module_declaration subst desc)
             ~arg:true (env_from_summary s subst)
       | Env_functor_arg _ -> assert false
+      | Env_constraints(s, map) ->
+          PathMap.fold
+            (fun path info ->
+              Env.add_local_type (Subst.type_path subst path)
+                (Subst.type_declaration subst info))
+            map (env_from_summary s subst)
     in
       Hashtbl.add env_cache (sum, subst) env;
       env

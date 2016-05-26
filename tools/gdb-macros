@@ -1,14 +1,17 @@
-#########################################################################
-#                                                                       #
-#                                 OCaml                                 #
-#                                                                       #
-#                 Damien Doligez, Jane Street Group, LLC                #
-#                                                                       #
-#   Copyright 2015 Institut National de Recherche en Informatique et    #
-#   en Automatique.  All rights reserved.  This file is distributed     #
-#   under the terms of the Q Public License version 1.0.                #
-#                                                                       #
-#########################################################################
+#**************************************************************************
+#*                                                                        *
+#*                                 OCaml                                  *
+#*                                                                        *
+#*                 Damien Doligez, Jane Street Group, LLC                 *
+#*                                                                        *
+#*   Copyright 2015 Institut National de Recherche en Informatique et     *
+#*     en Automatique.                                                    *
+#*                                                                        *
+#*   All rights reserved.  This file is distributed under the terms of    *
+#*   the GNU Lesser General Public License version 2.1, with the          *
+#*   special exception on linking described in the file LICENSE.          *
+#*                                                                        *
+#**************************************************************************
 
 # A set of macros for low-level debugging of OCaml programs and of the
 # OCaml runtime itself (both native and byte-code).
@@ -163,7 +166,7 @@ define camlblock
   set $mysize = $size
   set $camlnext = $arg0 + $camlwordsize * ($size + 1)
   printf "\n"
-  
+
   if $tag == 252
     x/s $arg0
   end
@@ -209,7 +212,7 @@ define camlblock
       if ($field & 1) == 1
         camlint $field
       end
-      printf "\n"        
+      printf "\n"
       set $count = $count + 1
     end
     if $count < $mysize

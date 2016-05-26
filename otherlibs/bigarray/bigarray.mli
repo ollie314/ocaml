@@ -1,15 +1,17 @@
-(***********************************************************************)
-(*                                                                     *)
-(*                                OCaml                                *)
-(*                                                                     *)
-(*         Manuel Serrano and Xavier Leroy, INRIA Rocquencourt         *)
-(*                                                                     *)
-(*  Copyright 2000 Institut National de Recherche en Informatique et   *)
-(*  en Automatique.  All rights reserved.  This file is distributed    *)
-(*  under the terms of the GNU Library General Public License, with    *)
-(*  the special exception on linking described in file ../../LICENSE.  *)
-(*                                                                     *)
-(***********************************************************************)
+(**************************************************************************)
+(*                                                                        *)
+(*                                 OCaml                                  *)
+(*                                                                        *)
+(*          Manuel Serrano and Xavier Leroy, INRIA Rocquencourt           *)
+(*                                                                        *)
+(*   Copyright 2000 Institut National de Recherche en Informatique et     *)
+(*     en Automatique.                                                    *)
+(*                                                                        *)
+(*   All rights reserved.  This file is distributed under the terms of    *)
+(*   the GNU Lesser General Public License version 2.1, with the          *)
+(*   special exception on linking described in the file LICENSE.          *)
+(*                                                                        *)
+(**************************************************************************)
 
 (** Large, multi-dimensional, numerical arrays.
 
@@ -83,7 +85,7 @@ type ('a, 'b) kind =
   | Nativeint : (nativeint, nativeint_elt) kind
   | Complex32 : (Complex.t, complex32_elt) kind
   | Complex64 : (Complex.t, complex64_elt) kind
-  | Char : (char, int8_unsigned_elt) kind
+  | Char : (char, int8_unsigned_elt) kind (**)
 (** To each element kind is associated an OCaml type, which is
    the type of OCaml values that can be stored in the big array
    or read back from it.  This type is not necessarily the same
@@ -168,12 +170,18 @@ val char : (char, int8_unsigned_elt) kind
    characters instead of arrays of small integers, by using
    the kind value [char] instead of [int8_unsigned]. *)
 
+val kind_size_in_bytes : ('a, 'b) kind -> int
+(** [kind_size_in_bytes k] is the number of bytes used to store
+   an element of type [k].
+
+   @since 4.03.0 *)
+
 (** {6 Array layouts} *)
 
-type c_layout = C_layout_typ
+type c_layout = C_layout_typ (**)
 (** See {!Bigarray.fortran_layout}.*)
 
-type fortran_layout = Fortran_layout_typ
+type fortran_layout = Fortran_layout_typ (**)
 (** To facilitate interoperability with existing C and Fortran code,
    this library supports two different memory layouts for big arrays,
    one compatible with the C conventions,
@@ -279,6 +287,12 @@ module Genarray :
 
   external layout: ('a, 'b, 'c) t -> 'c layout = "caml_ba_layout"
   (** Return the layout of the given big array. *)
+
+  val size_in_bytes : ('a, 'b, 'c) t -> int
+  (** [size_in_bytes a] is the number of elements in [a] multiplied
+    by [a]'s {!kind_size_in_bytes}.
+
+    @since 4.03.0 *)
 
   external get: ('a, 'b, 'c) t -> int array -> 'a = "caml_ba_get_generic"
   (** Read an element of a generic big array.
@@ -452,19 +466,13 @@ module Genarray :
      the initial call to [map_file]. Therefore, you should make sure no
      other process modifies the mapped file while you're accessing it,
      or a SIGBUS signal may be raised. This happens, for instance, if the
-     file is shrinked. *)
+     file is shrunk.
+
+     This function raises [Sys_error] in the case of any errors from the
+     underlying system calls.  [Invalid_argument] or [Failure] may be
+     raised in cases where argument validation fails. *)
 
   end
-
-external ( .{,..,} ) : ('a, 'b, 'c) Genarray.t -> int array -> 'a = "caml_ba_get_generic"
-(** Index operator for generic arrays. When the [Bigarray] module is open,
- [ bigarray.{a,b,c,d,...} ] is desugared to [ (.{,..,} ) bigarray [|a,b,c,d,...|] ].
- *)
-
-external ( .{,..,} <- ) : ('a, 'b, 'c) Genarray.t -> int array -> 'a -> unit = "caml_ba_set_generic"
-(** Indexed assignment operator for generic arrays. When the [Bigarray] module is open,
- [ bigarray.{a,b,c,d,...} <- x ] is desugared to [ (.{,..,} ) bigarray [|a,b,c,d,...|] x ].
- *)
 
 (** {6 One-dimensional arrays} *)
 
@@ -495,6 +503,12 @@ module Array1 : sig
 
   external layout: ('a, 'b, 'c) t -> 'c layout = "caml_ba_layout"
   (** Return the layout of the given big array. *)
+
+  val size_in_bytes : ('a, 'b, 'c) t -> int
+  (** [size_in_bytes a] is the number of elements in [a]
+    multiplied by [a]'s {!kind_size_in_bytes}.
+
+    @since 4.03.0 *)
 
   external get: ('a, 'b, 'c) t -> int -> 'a = "%caml_ba_ref_1"
   (** [Array1.get a x], or alternatively [a.{x}],
@@ -547,15 +561,6 @@ module Array1 : sig
 
 end
 
-external ( .{} ) : ('a, 'b, 'c) Array1.t -> int -> 'a = "%caml_ba_opt_ref_1"
-(** Index operator for one-dimensional arrays. When the [Bigarray] module is open,
- [ bigarray.{a} ] is desugared to [ (.{} ) bigarray a ].
- *)
-
-external ( .{} <- ) : ('a, 'b, 'c) Array1.t -> int -> 'a -> unit = "%caml_ba_opt_set_1"
-(** Indexed assignment operator for one-dimensional arrays. When the [Bigarray] module is open,
- [ bigarray.{a} <- x ] is desugared to [ (.{} ) bigarray x ].
- *)
 
 (** {6 Two-dimensional arrays} *)
 
@@ -586,6 +591,12 @@ module Array2 :
 
   external layout: ('a, 'b, 'c) t -> 'c layout = "caml_ba_layout"
   (** Return the layout of the given big array. *)
+
+  val size_in_bytes : ('a, 'b, 'c) t -> int
+  (** [size_in_bytes a] is the number of elements in [a]
+    multiplied by [a]'s {!kind_size_in_bytes}.
+
+    @since 4.03.0 *)
 
   external get: ('a, 'b, 'c) t -> int -> int -> 'a = "%caml_ba_ref_2"
   (** [Array2.get a x y], also written [a.{x,y}],
@@ -660,17 +671,6 @@ module Array2 :
 
 end
 
-external ( .{,} ) : ('a, 'b, 'c) Array2.t -> int -> int -> 'a = "%caml_ba_opt_ref_2"
-(** Index operator for bidimensional arrays. When the [Bigarray] module is open,
- [ bigarray.{a,b} ] is desugared to [ (.{,} ) bigarray a b ].
- *)
-
-external ( .{,} <- ) : ('a, 'b, 'c) Array2.t -> int -> int -> 'a -> unit = "%caml_ba_opt_set_2"
-(** Indexed assignment operator for bidimensionnal arrays. When the [Bigarray] module is open,
- [ bigarray.{a,b} <- x ] is desugared to [ (.{,} ) bigarray a b x ].
- *)
-
-
 (** {6 Three-dimensional arrays} *)
 
 (** Three-dimensional arrays. The [Array3] structure provides operations
@@ -703,6 +703,12 @@ module Array3 :
 
   external layout: ('a, 'b, 'c) t -> 'c layout = "caml_ba_layout"
   (** Return the layout of the given big array. *)
+
+  val size_in_bytes : ('a, 'b, 'c) t -> int
+  (** [size_in_bytes a] is the number of elements in [a]
+    multiplied by [a]'s {!kind_size_in_bytes}.
+
+    @since 4.03.0 *)
 
   external get: ('a, 'b, 'c) t -> int -> int -> int -> 'a = "%caml_ba_ref_3"
   (** [Array3.get a x y z], also written [a.{x,y,z}],
@@ -798,16 +804,6 @@ module Array3 :
       performed. *)
 
 end
-
-external ( .{,,} ) : ('a, 'b, 'c) Array3.t -> int -> int -> int -> 'a = "%caml_ba_opt_ref_3"
-(** Index operator for tridimensional arrays. When the [Bigarray] module is open,
- [ bigarray.{a,b,c} ] is desugared to [ (.{,} ) bigarray a b c ].
- *)
-
-external ( .{,,} <- ) : ('a, 'b, 'c) Array3.t -> int -> int -> int -> 'a -> unit = "%caml_ba_opt_set_3"
-(** Indexed assignment operator for tridimensionnal arrays. When the [Bigarray] module is open,
- [ bigarray.{a,b,c} <- x ] is desugared to [ (.{,,} ) bigarray a b c x ].
- *)
 
 (** {6 Coercions between generic big arrays and fixed-dimension big arrays} *)
 

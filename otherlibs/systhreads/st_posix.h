@@ -1,15 +1,17 @@
-/***********************************************************************/
-/*                                                                     */
-/*                                OCaml                                */
-/*                                                                     */
-/*         Xavier Leroy and Damien Doligez, INRIA Rocquencourt         */
-/*                                                                     */
-/*  Copyright 2009 Institut National de Recherche en Informatique et   */
-/*  en Automatique.  All rights reserved.  This file is distributed    */
-/*  under the terms of the GNU Library General Public License, with    */
-/*  the special exception on linking described in file ../../LICENSE.  */
-/*                                                                     */
-/***********************************************************************/
+/**************************************************************************/
+/*                                                                        */
+/*                                 OCaml                                  */
+/*                                                                        */
+/*          Xavier Leroy and Damien Doligez, INRIA Rocquencourt           */
+/*                                                                        */
+/*   Copyright 2009 Institut National de Recherche en Informatique et     */
+/*     en Automatique.                                                    */
+/*                                                                        */
+/*   All rights reserved.  This file is distributed under the terms of    */
+/*   the GNU Lesser General Public License version 2.1, with the          */
+/*   special exception on linking described in the file LICENSE.          */
+/*                                                                        */
+/**************************************************************************/
 
 /* POSIX thread implementation of the "st" interface */
 
@@ -348,7 +350,8 @@ static void * caml_thread_tick(void * arg)
    The reason for the omission is that Android (GUI) applications
    are not supposed to fork at all, however this workaround is still
    included in case OCaml is used for an Android CLI utility. */
-int pthread_atfork(void (*prepare)(void), void (*parent)(void), void (*child)(void));
+int pthread_atfork(void (*prepare)(void), void (*parent)(void),
+                   void (*child)(void));
 #endif
 
 static int st_atfork(void (*fn)(void))
@@ -417,7 +420,7 @@ value caml_wait_signal(value sigs) /* ML */
   retcode = sigwait(&set, &signo);
   leave_blocking_section();
   st_check_error(retcode, "Thread.wait_signal");
-  return Val_int(signo);
+  return Val_int(caml_rev_convert_signal_number(signo));
 #else
   invalid_argument("Thread.wait_signal not implemented");
   return Val_int(0);            /* not reached */

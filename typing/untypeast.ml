@@ -1,12 +1,15 @@
 (**************************************************************************)
 (*                                                                        *)
-(*                                OCaml                                   *)
+(*                                 OCaml                                  *)
 (*                                                                        *)
 (*    Thomas Gazagnaire (OCamlPro), Fabrice Le Fessant (INRIA Saclay)     *)
 (*                                                                        *)
 (*   Copyright 2007 Institut National de Recherche en Informatique et     *)
-(*   en Automatique.  All rights reserved.  This file is distributed      *)
-(*   under the terms of the Q Public License version 1.0.                 *)
+(*     en Automatique.                                                    *)
+(*                                                                        *)
+(*   All rights reserved.  This file is distributed under the terms of    *)
+(*   the GNU Lesser General Public License version 2.1, with the          *)
+(*   special exception on linking described in the file LICENSE.          *)
 (*                                                                        *)
 (**************************************************************************)
 
@@ -111,6 +114,15 @@ let fresh_name s env =
   aux 0
 
 (** Mapping functions. *)
+
+let constant = function
+  | Const_char c -> Pconst_char c
+  | Const_string (s,d) -> Pconst_string (s,d)
+  | Const_int i -> Pconst_integer (string_of_int i, None)
+  | Const_int32 i -> Pconst_integer (Int32.to_string i, Some 'l')
+  | Const_int64 i -> Pconst_integer (Int64.to_string i, Some 'L')
+  | Const_nativeint i -> Pconst_integer (Nativeint.to_string i, Some 'n')
+  | Const_float f -> Pconst_float (f,None)
 
 let attribute sub (s, p) = (map_loc sub s, p)
 let attributes sub l = List.map (sub.attribute sub) l
@@ -280,7 +292,7 @@ let pattern sub pat =
 
     | Tpat_alias (pat, _id, name) ->
         Ppat_alias (sub.pat sub pat, name)
-    | Tpat_constant cst -> Ppat_constant cst
+    | Tpat_constant cst -> Ppat_constant (constant cst)
     | Tpat_tuple list ->
         Ppat_tuple (List.map (sub.pat sub) list)
     | Tpat_construct (lid, _, args) ->
@@ -345,20 +357,20 @@ let expression sub exp =
   let desc =
     match exp.exp_desc with
       Texp_ident (_path, lid, _) -> Pexp_ident (map_loc sub lid)
-    | Texp_constant cst -> Pexp_constant cst
+    | Texp_constant cst -> Pexp_constant (constant cst)
     | Texp_let (rec_flag, list, exp) ->
         Pexp_let (rec_flag,
           List.map (sub.value_binding sub) list,
           sub.expr sub exp)
 
-    (** Pexp_function can't have a label, so we split in 3 cases. *)
-    (** One case, no guard: It's a fun. *)
+    (* Pexp_function can't have a label, so we split in 3 cases. *)
+    (* One case, no guard: It's a fun. *)
     | Texp_function (label, [{c_lhs=p; c_guard=None; c_rhs=e}], _) ->
         Pexp_fun (label, None, sub.pat sub p, sub.expr sub e)
-    (** No label: it's a function. *)
+    (* No label: it's a function. *)
     | Texp_function (Nolabel, cases, _) ->
         Pexp_function (sub.cases sub cases)
-    (** Mix of both, we generate `fun ~label:$name$ -> match $name$ with ...` *)
+    (* Mix of both, we generate `fun ~label:$name$ -> match $name$ with ...` *)
     | Texp_function (Labelled s | Optional s as label, cases, _) ->
         let name = fresh_name s exp.exp_env in
         Pexp_fun (label, None, Pat.var ~loc {loc;txt = name },
@@ -366,7 +378,7 @@ let expression sub exp =
                           (sub.cases sub cases))
     | Texp_apply (exp, list) ->
         Pexp_apply (sub.expr sub exp,
-          List.fold_right (fun (label, expo, _) list ->
+          List.fold_right (fun (label, expo) list ->
               match expo with
                 None -> list
               | Some exp -> (label, sub.expr sub exp) :: list
@@ -438,12 +450,22 @@ let expression sub exp =
     | Texp_letmodule (_id, name, mexpr, exp) ->
         Pexp_letmodule (name, sub.module_expr sub mexpr,
           sub.expr sub exp)
+    | Texp_letexception (ext, exp) ->
+        Pexp_letexception (sub.extension_constructor sub ext,
+                           sub.expr sub exp)
     | Texp_assert exp -> Pexp_assert (sub.expr sub exp)
     | Texp_lazy exp -> Pexp_lazy (sub.expr sub exp)
     | Texp_object (cl, _) ->
         Pexp_object (sub.class_structure sub cl)
     | Texp_pack (mexpr) ->
         Pexp_pack (sub.module_expr sub mexpr)
+    | Texp_unreachable ->
+        Pexp_unreachable
+    | Texp_extension_constructor (lid, _) ->
+        Pexp_extension ({ txt = "ocaml.extension_constructor"; loc },
+                        PStr [ Str.eval ~loc
+                                 (Exp.construct ~loc (map_loc sub lid) None)
+                             ])
   in
   List.fold_right (exp_extra sub) exp.exp_extra
     (Exp.mk ~loc ~attrs desc)
@@ -594,7 +616,7 @@ let class_expr sub cexpr =
 
     | Tcl_apply (cl, args) ->
         Pcl_apply (sub.class_expr sub cl,
-          List.fold_right (fun (label, expo, _) list ->
+          List.fold_right (fun (label, expo) list ->
               match expo with
                 None -> list
               | Some exp -> (label, sub.expr sub exp) :: list
@@ -728,7 +750,7 @@ let class_field sub cf =
   in
   Cf.mk ~loc ~attrs desc
 
-let location sub l = l
+let location _sub l = l
 
 let default_mapper =
   {

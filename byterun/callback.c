@@ -1,15 +1,17 @@
-/***********************************************************************/
-/*                                                                     */
-/*                                OCaml                                */
-/*                                                                     */
-/*            Xavier Leroy, projet Cristal, INRIA Rocquencourt         */
-/*                                                                     */
-/*  Copyright 1996 Institut National de Recherche en Informatique et   */
-/*  en Automatique.  All rights reserved.  This file is distributed    */
-/*  under the terms of the GNU Library General Public License, with    */
-/*  the special exception on linking described in file ../LICENSE.     */
-/*                                                                     */
-/***********************************************************************/
+/**************************************************************************/
+/*                                                                        */
+/*                                 OCaml                                  */
+/*                                                                        */
+/*             Xavier Leroy, projet Cristal, INRIA Rocquencourt           */
+/*                                                                        */
+/*   Copyright 1996 Institut National de Recherche en Informatique et     */
+/*     en Automatique.                                                    */
+/*                                                                        */
+/*   All rights reserved.  This file is distributed under the terms of    */
+/*   the GNU Lesser General Public License version 2.1, with the          */
+/*   special exception on linking described in the file LICENSE.          */
+/*                                                                        */
+/**************************************************************************/
 
 /* Callbacks from C to OCaml */
 
@@ -244,4 +246,15 @@ CAMLexport value * caml_named_value(char const *name)
     if (strcmp(name, nv->name) == 0) return &nv->val;
   }
   return NULL;
+}
+
+CAMLexport void caml_iterate_named_values(caml_named_action f)
+{
+  int i;
+  for(i = 0; i < Named_value_size; i++){
+    struct named_value * nv;
+    for (nv = named_value_table[i]; nv != NULL; nv = nv->next) {
+      f( &nv->val, nv->name );
+    }
+  }
 }

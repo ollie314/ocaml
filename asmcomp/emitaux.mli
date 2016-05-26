@@ -1,14 +1,17 @@
-(***********************************************************************)
-(*                                                                     *)
-(*                                OCaml                                *)
-(*                                                                     *)
-(*            Xavier Leroy, projet Cristal, INRIA Rocquencourt         *)
-(*                                                                     *)
-(*  Copyright 1996 Institut National de Recherche en Informatique et   *)
-(*  en Automatique.  All rights reserved.  This file is distributed    *)
-(*  under the terms of the Q Public License version 1.0.               *)
-(*                                                                     *)
-(***********************************************************************)
+(**************************************************************************)
+(*                                                                        *)
+(*                                 OCaml                                  *)
+(*                                                                        *)
+(*             Xavier Leroy, projet Cristal, INRIA Rocquencourt           *)
+(*                                                                        *)
+(*   Copyright 1996 Institut National de Recherche en Informatique et     *)
+(*     en Automatique.                                                    *)
+(*                                                                        *)
+(*   All rights reserved.  This file is distributed under the terms of    *)
+(*   the GNU Lesser General Public License version 2.1, with the          *)
+(*   special exception on linking described in the file LICENSE.          *)
+(*                                                                        *)
+(**************************************************************************)
 
 (* Common functions for emitting assembly code *)
 
@@ -32,8 +35,8 @@ val reset_debug_info: unit -> unit
 val emit_debug_info: Debuginfo.t -> unit
 val emit_debug_info_gen :
   Debuginfo.t ->
-  (int -> string -> unit) ->
-  (int -> int -> unit) -> unit
+  (file_num:int -> file_name:string -> unit) ->
+  (file_num:int -> line:int -> col:int -> unit) -> unit
 
 type frame_descr =
   { fd_lbl: int;                        (* Return address *)
@@ -60,6 +63,7 @@ val is_generic_function: string -> bool
 val cfi_startproc : unit -> unit
 val cfi_endproc : unit -> unit
 val cfi_adjust_cfa_offset : int -> unit
+val cfi_offset : reg:int -> offset:int -> unit
 
 
 val binary_backend_available: bool ref

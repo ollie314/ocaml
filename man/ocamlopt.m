@@ -1,14 +1,17 @@
-.\"***********************************************************************
-.\"*                                                                     *
-.\"*                                OCaml                                *
-.\"*                                                                     *
-.\"*            Xavier Leroy, projet Cristal, INRIA Rocquencourt         *
-.\"*                                                                     *
-.\"*  Copyright 1996 Institut National de Recherche en Informatique et   *
-.\"*  en Automatique.  All rights reserved.  This file is distributed    *
-.\"*  under the terms of the Q Public License version 1.0.               *
-.\"*                                                                     *
-.\"***********************************************************************
+.\"**************************************************************************
+.\"*                                                                        *
+.\"*                                 OCaml                                  *
+.\"*                                                                        *
+.\"*             Xavier Leroy, projet Cristal, INRIA Rocquencourt           *
+.\"*                                                                        *
+.\"*   Copyright 1996 Institut National de Recherche en Informatique et     *
+.\"*     en Automatique.                                                    *
+.\"*                                                                        *
+.\"*   All rights reserved.  This file is distributed under the terms of    *
+.\"*   the GNU Lesser General Public License version 2.1, with the          *
+.\"*   special exception on linking described in the file LICENSE.          *
+.\"*                                                                        *
+.\"**************************************************************************
 .\"
 .TH OCAMLOPT 1
 
@@ -302,6 +305,9 @@ as an interface file, even if its extension is not .mli.
 Recognize file names ending with
 .I string
 as interface files (instead of the default .mli).
+.TP
+.B \-keep-locs
+Keep documentation strings in generated .cmi files.
 .TP
 .B \-keep-locs
 Keep locations in generated .cmi files.
@@ -600,7 +606,8 @@ compiling your program with later versions of OCaml when they add new
 warnings or modify existing warnings.
 
 The default setting is
-.B \-warn\-error\ -a (all warnings are non-fatal).
+.B \-warn\-error \-a
+(all warnings are non-fatal).
 .TP
 .B \-warn\-help
 Show the description of all available warning numbers.

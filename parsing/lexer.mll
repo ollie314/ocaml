@@ -1,14 +1,17 @@
-(***********************************************************************)
-(*                                                                     *)
-(*                                OCaml                                *)
-(*                                                                     *)
-(*            Xavier Leroy, projet Cristal, INRIA Rocquencourt         *)
-(*                                                                     *)
-(*  Copyright 1996 Institut National de Recherche en Informatique et   *)
-(*  en Automatique.  All rights reserved.  This file is distributed    *)
-(*  under the terms of the Q Public License version 1.0.               *)
-(*                                                                     *)
-(***********************************************************************)
+(**************************************************************************)
+(*                                                                        *)
+(*                                 OCaml                                  *)
+(*                                                                        *)
+(*             Xavier Leroy, projet Cristal, INRIA Rocquencourt           *)
+(*                                                                        *)
+(*   Copyright 1996 Institut National de Recherche en Informatique et     *)
+(*     en Automatique.                                                    *)
+(*                                                                        *)
+(*   All rights reserved.  This file is distributed under the terms of    *)
+(*   the GNU Lesser General Public License version 2.1, with the          *)
+(*   special exception on linking described in the file LICENSE.          *)
+(*                                                                        *)
+(**************************************************************************)
 
 (* The lexer definition *)
 
@@ -24,7 +27,6 @@ type error =
   | Unterminated_string
   | Unterminated_string_in_comment of Location.t * Location.t
   | Keyword_as_label of string
-  | Literal_overflow of string
   | Invalid_literal of string
 ;;
 
@@ -85,10 +87,10 @@ let keyword_table =
     "while", WHILE;
     "with", WITH;
 
+    "lor", INFIXOP3("lor"); (* Should be INFIXOP2 *)
+    "lxor", INFIXOP3("lxor"); (* Should be INFIXOP2 *)
     "mod", INFIXOP3("mod");
     "land", INFIXOP3("land");
-    "lor", INFIXOP3("lor");
-    "lxor", INFIXOP3("lxor");
     "lsl", INFIXOP4("lsl");
     "lsr", INFIXOP4("lsr");
     "asr", INFIXOP4("asr")
@@ -134,6 +136,20 @@ let is_in_string = ref false
 let in_string () = !is_in_string
 let print_warnings = ref true
 
+(* Escaped chars are interpreted in strings unless they are in comments. *)
+let store_escaped_char lexbuf c =
+  if in_comment () then store_lexeme lexbuf else store_string_char c
+
+let with_comment_buffer comment lexbuf =
+  let start_loc = Location.curr lexbuf  in
+  comment_start_loc := [start_loc];
+  reset_string_buffer ();
+  let end_loc = comment lexbuf in
+  let s = get_stored_string () in
+  reset_string_buffer ();
+  let loc = { start_loc with Location.loc_end = end_loc.Location.loc_end } in
+  s, loc
+
 (* To translate escape sequences *)
 
 let char_for_backslash = function
@@ -154,6 +170,12 @@ let char_for_decimal_code lexbuf i =
                       Location.curr lexbuf))
   else Char.chr c
 
+let char_for_octal_code lexbuf i =
+  let c = 64 * (Char.code(Lexing.lexeme_char lexbuf i) - 48) +
+           8 * (Char.code(Lexing.lexeme_char lexbuf (i+1)) - 48) +
+               (Char.code(Lexing.lexeme_char lexbuf (i+2)) - 48) in
+  Char.chr c
+
 let char_for_hexadecimal_code lexbuf i =
   let d1 = Char.code (Lexing.lexeme_char lexbuf i) in
   let val1 = if d1 >= 97 then d1 - 87
@@ -166,32 +188,6 @@ let char_for_hexadecimal_code lexbuf i =
              else d2 - 48
   in
   Char.chr (val1 * 16 + val2)
-
-(* To convert integer literals, allowing max_int + 1 (PR#4210) *)
-
-let cvt_int_literal s =
-  - int_of_string ("-" ^ s)
-let cvt_int32_literal s =
-  Int32.neg (Int32.of_string ("-" ^ String.sub s 0 (String.length s - 1)))
-let cvt_int64_literal s =
-  Int64.neg (Int64.of_string ("-" ^ String.sub s 0 (String.length s - 1)))
-let cvt_nativeint_literal s =
-  Nativeint.neg (Nativeint.of_string ("-" ^ String.sub s 0
-                                                       (String.length s - 1)))
-
-(* Remove underscores from float literals *)
-
-let remove_underscores s =
-  let l = String.length s in
-  let b = Bytes.create l in
-  let rec remove src dst =
-    if src >= l then
-      if dst >= l then s else Bytes.sub_string b 0 dst
-    else
-      match s.[src] with
-        '_' -> remove (src + 1) dst
-      |  c  -> Bytes.set b dst c; remove (src + 1) (dst + 1)
-  in remove 0 0
 
 (* recover the name from a LABEL or OPTLABEL token *)
 
@@ -220,12 +216,28 @@ let update_loc lexbuf file line absolute chars =
 
 let preprocessor = ref None
 
+let escaped_newlines = ref false
+
 (* Warn about Latin-1 characters used in idents *)
 
 let warn_latin1 lexbuf =
   Location.prerr_warning (Location.curr lexbuf)
     (Warnings.Deprecated "ISO-Latin1 characters in identifiers")
 ;;
+
+let handle_docstrings = ref true
+let comment_list = ref []
+
+let add_comment com =
+  comment_list := com :: !comment_list
+
+let add_docstring_comment ds =
+  let com =
+    ("*" ^ Docstrings.docstring_body ds, Docstrings.docstring_loc ds)
+  in
+    add_comment com
+
+let comments () = List.rev !comment_list
 
 (* Error report *)
 
@@ -246,9 +258,6 @@ let report_error ppf = function
               Location.print_error loc
   | Keyword_as_label kwd ->
       fprintf ppf "`%s' is a keyword, it cannot be used as label name" kwd
-  | Literal_overflow ty ->
-      fprintf ppf "Integer literal exceeds the range of representable \
-                   integers of type %s" ty
   | Invalid_literal s ->
       fprintf ppf "Invalid literal %s" s
 
@@ -287,23 +296,24 @@ let int_literal =
 let float_literal =
   ['0'-'9'] ['0'-'9' '_']*
   ('.' ['0'-'9' '_']* )?
-  (['e' 'E'] ['+' '-']? ['0'-'9'] ['0'-'9' '_']*)?
+  (['e' 'E'] ['+' '-']? ['0'-'9'] ['0'-'9' '_']* )?
+let hex_float_literal =
+  '0' ['x' 'X']
+  ['0'-'9' 'A'-'F' 'a'-'f'] ['0'-'9' 'A'-'F' 'a'-'f' '_']*
+  ('.' ['0'-'9' 'A'-'F' 'a'-'f' '_']* )?
+  (['p' 'P'] ['+' '-']? ['0'-'9'] ['0'-'9' '_']* )?
+let literal_modifier = ['G'-'Z' 'g'-'z']
 
 rule token = parse
   | "\\" newline {
-      match !preprocessor with
-      | None ->
+      if not !escaped_newlines then
         raise (Error(Illegal_character (Lexing.lexeme_char lexbuf 0),
-                     Location.curr lexbuf))
-      | Some _ ->
-        update_loc lexbuf None 1 false 0;
-        token lexbuf }
+                     Location.curr lexbuf));
+      update_loc lexbuf None 1 false 0;
+      token lexbuf }
   | newline
       { update_loc lexbuf None 1 false 0;
-        match !preprocessor with
-        | None -> token lexbuf
-        | Some _ -> EOL
-      }
+        EOL }
   | blank +
       { token lexbuf }
   | "_"
@@ -330,31 +340,16 @@ rule token = parse
       { UIDENT(Lexing.lexeme lexbuf) }       (* No capitalized keywords *)
   | uppercase_latin1 identchar_latin1 *
       { warn_latin1 lexbuf; UIDENT(Lexing.lexeme lexbuf) }
-  | int_literal
-      { try
-          INT (cvt_int_literal (Lexing.lexeme lexbuf))
-        with Failure _ ->
-          raise (Error(Literal_overflow "int", Location.curr lexbuf))
-      }
-  | float_literal
-      { FLOAT (remove_underscores(Lexing.lexeme lexbuf)) }
-  | int_literal "l"
-      { try
-          INT32 (cvt_int32_literal (Lexing.lexeme lexbuf))
-        with Failure _ ->
-          raise (Error(Literal_overflow "int32", Location.curr lexbuf)) }
-  | int_literal "L"
-      { try
-          INT64 (cvt_int64_literal (Lexing.lexeme lexbuf))
-        with Failure _ ->
-          raise (Error(Literal_overflow "int64", Location.curr lexbuf)) }
-  | int_literal "n"
-      { try
-          NATIVEINT (cvt_nativeint_literal (Lexing.lexeme lexbuf))
-        with Failure _ ->
-          raise (Error(Literal_overflow "nativeint", Location.curr lexbuf)) }
-  | (float_literal | int_literal) identchar+
-      { raise (Error(Invalid_literal (Lexing.lexeme lexbuf), Location.curr lexbuf)) }
+  | int_literal { INT (Lexing.lexeme lexbuf, None) }
+  | (int_literal as lit) (literal_modifier as modif)
+      { INT (lit, Some modif) }
+  | float_literal | hex_float_literal
+      { FLOAT (Lexing.lexeme lexbuf, None) }
+  | ((float_literal | hex_float_literal) as lit) (literal_modifier as modif)
+      { FLOAT (lit, Some modif) }
+  | (float_literal | hex_float_literal | int_literal) identchar+
+      { raise (Error(Invalid_literal (Lexing.lexeme lexbuf),
+                     Location.curr lexbuf)) }
   | "\""
       { reset_string_buffer();
         is_in_string := true;
@@ -375,43 +370,50 @@ rule token = parse
         is_in_string := false;
         lexbuf.lex_start_p <- string_start;
         STRING (get_stored_string(), Some delim) }
-  | "'" newline "'"
+  | "\'" newline "\'"
       { update_loc lexbuf None 1 false 1;
         CHAR (Lexing.lexeme_char lexbuf 1) }
-  | "'" [^ '\\' '\'' '\010' '\013'] "'"
+  | "\'" [^ '\\' '\'' '\010' '\013'] "\'"
       { CHAR(Lexing.lexeme_char lexbuf 1) }
-  | "'\\" ['\\' '\'' '"' 'n' 't' 'b' 'r' ' '] "'"
+  | "\'\\" ['\\' '\'' '\"' 'n' 't' 'b' 'r' ' '] "\'"
       { CHAR(char_for_backslash (Lexing.lexeme_char lexbuf 2)) }
-  | "'\\" ['0'-'9'] ['0'-'9'] ['0'-'9'] "'"
+  | "\'\\" ['0'-'9'] ['0'-'9'] ['0'-'9'] "\'"
       { CHAR(char_for_decimal_code lexbuf 2) }
-  | "'\\" 'x' ['0'-'9' 'a'-'f' 'A'-'F'] ['0'-'9' 'a'-'f' 'A'-'F'] "'"
+  | "\'\\" 'o' ['0'-'3'] ['0'-'7'] ['0'-'7'] "\'"
+      { CHAR(char_for_octal_code lexbuf 3) }
+  | "\'\\" 'x' ['0'-'9' 'a'-'f' 'A'-'F'] ['0'-'9' 'a'-'f' 'A'-'F'] "\'"
       { CHAR(char_for_hexadecimal_code lexbuf 3) }
-  | "'\\" _
+  | "\'\\" _
       { let l = Lexing.lexeme lexbuf in
         let esc = String.sub l 1 (String.length l - 1) in
         raise (Error(Illegal_escape esc, Location.curr lexbuf))
       }
   | "(*"
-      { let start_loc = Location.curr lexbuf  in
-        comment_start_loc := [start_loc];
-        reset_string_buffer ();
-        let end_loc = comment lexbuf in
-        let s = get_stored_string () in
-        reset_string_buffer ();
-        COMMENT (s, { start_loc with
-                      Location.loc_end = end_loc.Location.loc_end })
+      { let s, loc = with_comment_buffer comment lexbuf in
+        COMMENT (s, loc) }
+  | "(**"
+      { let s, loc = with_comment_buffer comment lexbuf in
+        if !handle_docstrings then
+          DOCSTRING (Docstrings.docstring s loc)
+        else
+          COMMENT ("*" ^ s, loc)
       }
+  | "(**" ('*'+) as stars
+      { let s, loc =
+          with_comment_buffer
+            (fun lexbuf ->
+               store_string ("*" ^ stars);
+               comment lexbuf)
+            lexbuf
+        in
+        COMMENT (s, loc) }
   | "(*)"
-      { let loc = Location.curr lexbuf  in
-        if !print_warnings then
-          Location.prerr_warning loc Warnings.Comment_start;
-        comment_start_loc := [loc];
-        reset_string_buffer ();
-        let end_loc = comment lexbuf in
-        let s = get_stored_string () in
-        reset_string_buffer ();
-        COMMENT (s, { loc with Location.loc_end = end_loc.Location.loc_end })
-      }
+      { if !print_warnings then
+          Location.prerr_warning (Location.curr lexbuf) Warnings.Comment_start;
+        let s, loc = with_comment_buffer comment lexbuf in
+        COMMENT (s, loc) }
+  | "(*" ('*'*) as stars "*)"
+      { COMMENT (stars, Location.curr lexbuf) }
   | "*)"
       { let loc = Location.curr lexbuf in
         Location.prerr_warning loc Warnings.Comment_not_end;
@@ -421,16 +423,16 @@ rule token = parse
         STAR
       }
   | "#" [' ' '\t']* (['0'-'9']+ as num) [' ' '\t']*
-        ("\"" ([^ '\010' '\013' '"' ] * as name) "\"")?
+        ("\"" ([^ '\010' '\013' '\"' ] * as name) "\"")?
         [^ '\010' '\013'] * newline
       { update_loc lexbuf name (int_of_string num) true 0;
         token lexbuf
       }
-  | "#"  { SHARP }
+  | "#"  { HASH }
   | "&"  { AMPERSAND }
   | "&&" { AMPERAMPER }
   | "`"  { BACKQUOTE }
-  | "'"  { QUOTE }
+  | "\'" { QUOTE }
   | "("  { LPAREN }
   | ")"  { RPAREN }
   | "*"  { STAR }
@@ -462,10 +464,10 @@ rule token = parse
   | "}"  { RBRACE }
   | ">}" { GREATERRBRACE }
   | "[@" { LBRACKETAT }
-  | "[%" { LBRACKETPERCENT }
-  | "[%%" { LBRACKETPERCENTPERCENT }
-  | "[@@" { LBRACKETATAT }
+  | "[@@"  { LBRACKETATAT }
   | "[@@@" { LBRACKETATATAT }
+  | "[%"   { LBRACKETPERCENT }
+  | "[%%"  { LBRACKETPERCENTPERCENT }
   | "!"  { BANG }
   | "!=" { INFIXOP0 "!=" }
   | "+"  { PLUS }
@@ -490,7 +492,7 @@ rule token = parse
   | ['*' '/' '%'] symbolchar *
             { INFIXOP3(Lexing.lexeme lexbuf) }
   | '#' (symbolchar | '#') +
-            { SHARPOP(Lexing.lexeme lexbuf) }
+            { HASHOP(Lexing.lexeme lexbuf) }
   | eof { EOF }
   | _
       { raise (Error(Illegal_character (Lexing.lexeme_char lexbuf 0),
@@ -514,7 +516,7 @@ and comment = parse
   | "\""
       {
         string_start_loc := Location.curr lexbuf;
-        store_string_char '"';
+        store_string_char '\"';
         is_in_string := true;
         begin try string lexbuf
         with Error (Unterminated_string, str_start) ->
@@ -527,7 +529,7 @@ and comment = parse
                           loc))
         end;
         is_in_string := false;
-        store_string_char '"';
+        store_string_char '\"';
         comment lexbuf }
   | "{" lowercase* "|"
       {
@@ -552,20 +554,20 @@ and comment = parse
         store_string_char '}';
         comment lexbuf }
 
-  | "''"
+  | "\'\'"
       { store_lexeme lexbuf; comment lexbuf }
-  | "'" newline "'"
+  | "\'" newline "\'"
       { update_loc lexbuf None 1 false 1;
         store_lexeme lexbuf;
         comment lexbuf
       }
-  | "'" [^ '\\' '\'' '\010' '\013' ] "'"
+  | "\'" [^ '\\' '\'' '\010' '\013' ] "\'"
       { store_lexeme lexbuf; comment lexbuf }
-  | "'\\" ['\\' '"' '\'' 'n' 't' 'b' 'r' ' '] "'"
+  | "\'\\" ['\\' '\"' '\'' 'n' 't' 'b' 'r' ' '] "\'"
       { store_lexeme lexbuf; comment lexbuf }
-  | "'\\" ['0'-'9'] ['0'-'9'] ['0'-'9'] "'"
+  | "\'\\" ['0'-'9'] ['0'-'9'] ['0'-'9'] "\'"
       { store_lexeme lexbuf; comment lexbuf }
-  | "'\\" 'x' ['0'-'9' 'a'-'f' 'A'-'F'] ['0'-'9' 'a'-'f' 'A'-'F'] "'"
+  | "\'\\" 'x' ['0'-'9' 'a'-'f' 'A'-'F'] ['0'-'9' 'a'-'f' 'A'-'F'] "\'"
       { store_lexeme lexbuf; comment lexbuf }
   | eof
       { match !comment_start_loc with
@@ -584,35 +586,37 @@ and comment = parse
       { store_lexeme lexbuf; comment lexbuf }
 
 and string = parse
-    '"'
+    '\"'
       { () }
   | '\\' newline ([' ' '\t'] * as space)
       { update_loc lexbuf None 1 false (String.length space);
+        if in_comment () then store_lexeme lexbuf;
         string lexbuf
       }
-  | '\\' ['\\' '\'' '"' 'n' 't' 'b' 'r' ' ']
-      { store_string_char(char_for_backslash(Lexing.lexeme_char lexbuf 1));
+  | '\\' ['\\' '\'' '\"' 'n' 't' 'b' 'r' ' ']
+      { store_escaped_char lexbuf
+                           (char_for_backslash(Lexing.lexeme_char lexbuf 1));
         string lexbuf }
   | '\\' ['0'-'9'] ['0'-'9'] ['0'-'9']
-      { store_string_char(char_for_decimal_code lexbuf 1);
+      { store_escaped_char lexbuf (char_for_decimal_code lexbuf 1);
+         string lexbuf }
+  | '\\' 'o' ['0'-'3'] ['0'-'7'] ['0'-'7']
+      { store_escaped_char lexbuf (char_for_octal_code lexbuf 2);
          string lexbuf }
   | '\\' 'x' ['0'-'9' 'a'-'f' 'A'-'F'] ['0'-'9' 'a'-'f' 'A'-'F']
-      { store_string_char(char_for_hexadecimal_code lexbuf 2);
+      { store_escaped_char lexbuf (char_for_hexadecimal_code lexbuf 2);
          string lexbuf }
   | '\\' _
-      { if in_comment ()
-        then string lexbuf
-        else begin
+      { if not (in_comment ()) then begin
 (*  Should be an error, but we are very lax.
           raise (Error (Illegal_escape (Lexing.lexeme lexbuf),
                         Location.curr lexbuf))
 *)
           let loc = Location.curr lexbuf in
           Location.prerr_warning loc Warnings.Illegal_backslash;
-          store_string_char (Lexing.lexeme_char lexbuf 0);
-          store_string_char (Lexing.lexeme_char lexbuf 1);
-          string lexbuf
-        end
+        end;
+        store_lexeme lexbuf;
+        string lexbuf
       }
   | newline
       { if not (in_comment ()) then
@@ -648,7 +652,7 @@ and quoted_string delim = parse
       { store_string_char(Lexing.lexeme_char lexbuf 0);
         quoted_string delim lexbuf }
 
-and skip_sharp_bang = parse
+and skip_hash_bang = parse
   | "#!" [^ '\n']* '\n' [^ '\n']* "\n!#\n"
        { update_loc lexbuf None 3 false 0 }
   | "#!" [^ '\n']* '\n'
@@ -662,24 +666,98 @@ and skip_sharp_bang = parse
     | None -> token lexbuf
     | Some (_init, preprocess) -> preprocess token lexbuf
 
-  let last_comments = ref []
-  let rec token lexbuf =
-    match token_with_comments lexbuf with
-        COMMENT (s, comment_loc) ->
-          last_comments := (s, comment_loc) :: !last_comments;
-          token lexbuf
-      | tok -> tok
-  let comments () = List.rev !last_comments
+  type newline_state =
+    | NoLine (* There have been no blank lines yet. *)
+    | NewLine
+        (* There have been no blank lines, and the previous
+           token was a newline. *)
+    | BlankLine (* There have been blank lines. *)
+
+  type doc_state =
+    | Initial  (* There have been no docstrings yet *)
+    | After of docstring list
+        (* There have been docstrings, none of which were
+           preceeded by a blank line *)
+    | Before of docstring list * docstring list * docstring list
+        (* There have been docstrings, some of which were
+           preceeded by a blank line *)
+
+  and docstring = Docstrings.docstring
+
+  let token lexbuf =
+    let post_pos = lexeme_end_p lexbuf in
+    let attach lines docs pre_pos =
+      let open Docstrings in
+        match docs, lines with
+        | Initial, _ -> ()
+        | After a, (NoLine | NewLine) ->
+            set_post_docstrings post_pos (List.rev a);
+            set_pre_docstrings pre_pos a;
+        | After a, BlankLine ->
+            set_post_docstrings post_pos (List.rev a);
+            set_pre_extra_docstrings pre_pos (List.rev a)
+        | Before(a, f, b), (NoLine | NewLine) ->
+            set_post_docstrings post_pos (List.rev a);
+            set_post_extra_docstrings post_pos
+              (List.rev_append f (List.rev b));
+            set_floating_docstrings pre_pos (List.rev f);
+            set_pre_extra_docstrings pre_pos (List.rev a);
+            set_pre_docstrings pre_pos b
+        | Before(a, f, b), BlankLine ->
+            set_post_docstrings post_pos (List.rev a);
+            set_post_extra_docstrings post_pos
+              (List.rev_append f (List.rev b));
+            set_floating_docstrings pre_pos
+              (List.rev_append f (List.rev b));
+            set_pre_extra_docstrings pre_pos (List.rev a)
+    in
+    let rec loop lines docs lexbuf =
+      match token_with_comments lexbuf with
+      | COMMENT (s, loc) ->
+          add_comment (s, loc);
+          let lines' =
+            match lines with
+            | NoLine -> NoLine
+            | NewLine -> NoLine
+            | BlankLine -> BlankLine
+          in
+          loop lines' docs lexbuf
+      | EOL ->
+          let lines' =
+            match lines with
+            | NoLine -> NewLine
+            | NewLine -> BlankLine
+            | BlankLine -> BlankLine
+          in
+          loop lines' docs lexbuf
+      | DOCSTRING doc ->
+          add_docstring_comment doc;
+          let docs' =
+            match docs, lines with
+            | Initial, (NoLine | NewLine) -> After [doc]
+            | Initial, BlankLine -> Before([], [], [doc])
+            | After a, (NoLine | NewLine) -> After (doc :: a)
+            | After a, BlankLine -> Before (a, [], [doc])
+            | Before(a, f, b), (NoLine | NewLine) -> Before(a, f, doc :: b)
+            | Before(a, f, b), BlankLine -> Before(a, b @ f, [doc])
+          in
+          loop NoLine docs' lexbuf
+      | tok ->
+          attach lines docs (lexeme_start_p lexbuf);
+          tok
+    in
+      loop NoLine Initial lexbuf
 
   let init () =
     is_in_string := false;
-    last_comments := [];
     comment_start_loc := [];
+    comment_list := [];
     match !preprocessor with
     | None -> ()
     | Some (init, _preprocess) -> init ()
 
   let set_preprocessor init preprocess =
+    escaped_newlines := true;
     preprocessor := Some (init, preprocess)
 
 }

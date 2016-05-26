@@ -1,14 +1,17 @@
-(***********************************************************************)
-(*                                                                     *)
-(*                                OCaml                                *)
-(*                                                                     *)
-(*            Xavier Leroy, projet Cristal, INRIA Rocquencourt         *)
-(*                                                                     *)
-(*  Copyright 1996 Institut National de Recherche en Informatique et   *)
-(*  en Automatique.  All rights reserved.  This file is distributed    *)
-(*  under the terms of the Q Public License version 1.0.               *)
-(*                                                                     *)
-(***********************************************************************)
+(**************************************************************************)
+(*                                                                        *)
+(*                                 OCaml                                  *)
+(*                                                                        *)
+(*             Xavier Leroy, projet Cristal, INRIA Rocquencourt           *)
+(*                                                                        *)
+(*   Copyright 1996 Institut National de Recherche en Informatique et     *)
+(*     en Automatique.                                                    *)
+(*                                                                        *)
+(*   All rights reserved.  This file is distributed under the terms of    *)
+(*   the GNU Lesser General Public License version 2.1, with the          *)
+(*   special exception on linking described in the file LICENSE.          *)
+(*                                                                        *)
+(**************************************************************************)
 
 (* Type inference for the core language *)
 
@@ -43,7 +46,7 @@ val type_self_pattern:
         Env.t * Env.t * Env.t
 val check_partial:
         ?lev:int -> Env.t -> type_expr ->
-	Location.t -> Typedtree.case list -> Typedtree.partial
+        Location.t -> Typedtree.case list -> Typedtree.partial
 val type_expect:
         ?in_function:(Location.t * type_expr) ->
         Env.t -> Parsetree.expression -> type_expr -> Typedtree.expression
@@ -113,6 +116,12 @@ type error =
   | No_value_clauses
   | Exception_pattern_below_toplevel
   | Inlined_record_escape
+  | Inlined_record_expected
+  | Unrefuted_pattern of Typedtree.pattern
+  | Invalid_extension_constructor_payload
+  | Not_an_extension_constructor
+  | Literal_overflow of string
+  | Unknown_literal of string * char
 
 exception Error of Location.t * Env.t * error
 exception Error_forward of Location.error
@@ -132,8 +141,10 @@ val type_object:
    Typedtree.class_structure * Types.class_signature * string list) ref
 val type_package:
   (Env.t -> Parsetree.module_expr -> Path.t -> Longident.t list ->
-  type_expr list -> Typedtree.module_expr * type_expr list) ref
+  Typedtree.module_expr * type_expr list) ref
 
 val create_package_type : Location.t -> Env.t ->
   Longident.t * (Longident.t * Parsetree.core_type) list ->
   Path.t * (Longident.t * Typedtree.core_type) list * Types.type_expr
+
+val constant: Parsetree.constant -> (Asttypes.constant, error) result

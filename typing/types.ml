@@ -1,14 +1,17 @@
-(***********************************************************************)
-(*                                                                     *)
-(*                                OCaml                                *)
-(*                                                                     *)
-(*            Xavier Leroy, projet Cristal, INRIA Rocquencourt         *)
-(*                                                                     *)
-(*  Copyright 1996 Institut National de Recherche en Informatique et   *)
-(*  en Automatique.  All rights reserved.  This file is distributed    *)
-(*  under the terms of the Q Public License version 1.0.               *)
-(*                                                                     *)
-(***********************************************************************)
+(**************************************************************************)
+(*                                                                        *)
+(*                                 OCaml                                  *)
+(*                                                                        *)
+(*             Xavier Leroy, projet Cristal, INRIA Rocquencourt           *)
+(*                                                                        *)
+(*   Copyright 1996 Institut National de Recherche en Informatique et     *)
+(*     en Automatique.                                                    *)
+(*                                                                        *)
+(*   All rights reserved.  This file is distributed under the terms of    *)
+(*   the GNU Lesser General Public License version 2.1, with the          *)
+(*   special exception on linking described in the file LICENSE.          *)
+(*                                                                        *)
+(**************************************************************************)
 
 (* Representation of types and declarations *)
 
@@ -19,7 +22,7 @@ open Asttypes
 type type_expr =
   { mutable desc: type_desc;
     mutable level: int;
-    mutable id: int }
+    id: int }
 
 and type_desc =
     Tvar of string option
@@ -145,6 +148,7 @@ type type_declaration =
     type_newtype_level: (int * int) option;
     type_loc: Location.t;
     type_attributes: Parsetree.attributes;
+    type_immediate: bool;
  }
 
 and type_kind =
@@ -264,9 +268,9 @@ and modtype_declaration =
   }
 
 and rec_status =
-    Trec_not                            (* first in a nonrecursive group *)
-  | Trec_first                          (* first in a recursive group *)
-  | Trec_next                           (* not first in a recursive/nonrecursive group *)
+    Trec_not                   (* first in a nonrecursive group *)
+  | Trec_first                 (* first in a recursive group *)
+  | Trec_next                  (* not first in a recursive/nonrecursive group *)
 
 and ext_status =
     Text_first                     (* first constructor of an extension *)
