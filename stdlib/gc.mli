@@ -170,6 +170,14 @@ external counters : unit -> float * float * float = "caml_gc_counters"
 (** Return [(minor_words, promoted_words, major_words)].  This function
     is as fast as [quick_stat]. *)
 
+external minor_words : unit -> (float [@unboxed])
+  = "caml_gc_minor_words" "caml_gc_minor_words_unboxed" [@@noalloc]
+(** Number of words allocated in the minor heap since the program was
+    started. This number is accurate in byte-code programs, but only an
+    approximation in programs compiled to native code.
+
+    In native code this function does not allocate. *)
+
 external get : unit -> control = "caml_gc_get"
 (** Return the current values of the GC parameters in a [control] record. *)
 
@@ -293,6 +301,19 @@ val finalise : ('a -> unit) -> 'a -> unit
    The results of calling {!String.make}, {!Bytes.make}, {!Bytes.create},
    {!Array.make}, and {!Pervasives.ref} are guaranteed to be
    heap-allocated and non-constant except when the length argument is [0].
+*)
+
+val finalise_last : (unit -> unit) -> 'a -> unit
+(** same as {!finalise} except the value is not given as argument. So
+    you can't use the given value for the computation of the
+    finalisation function. The benefit is that the function is called
+    after the value is unreachable for the last time instead of the
+    first time. So contrary to {!finalise} the value will never be
+    reachable again or used again. In particular every weak pointers
+    and ephemerons that contained this value as key or data is unset
+    before running the finalisation function. Moreover the
+    finalisation function attached with `GC.finalise` are always
+    called before the finalisation function attached with `GC.finalise_last`.
 *)
 
 val finalise_release : unit -> unit

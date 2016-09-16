@@ -749,40 +749,36 @@ let rec update_level env level ty =
 
 (* Generalize and lower levels of contravariant branches simultaneously *)
 
-let generalize_contravariant env =
-  if !Clflags.principal then generalize_structure else update_level env
-
-let rec generalize_expansive env var_level ty =
+let rec generalize_expansive env var_level visited ty =
   let ty = repr ty in
-  if ty.level <> generic_level then begin
-    if ty.level > var_level then begin
-      set_level ty generic_level;
-      match ty.desc with
-        Tconstr (path, tyl, abbrev) ->
-          let variance =
-            try (Env.find_type path env).type_variance
-            with Not_found -> List.map (fun _ -> Variance.may_inv) tyl in
-          abbrev := Mnil;
-          List.iter2
-            (fun v t ->
-              if Variance.(mem May_weak v)
-              then generalize_contravariant env var_level t
-              else generalize_expansive env var_level t)
-            variance tyl
-      | Tpackage (_, _, tyl) ->
-          List.iter (generalize_contravariant env var_level) tyl
-      | Tarrow (_, t1, t2, _) ->
-          generalize_contravariant env var_level t1;
-          generalize_expansive env var_level t2
-      | _ ->
-          iter_type_expr (generalize_expansive env var_level) ty
-    end
+  if ty.level = generic_level || ty.level <= var_level then () else
+  if not (Hashtbl.mem visited ty.id) then begin
+    Hashtbl.add visited ty.id ();
+    match ty.desc with
+      Tconstr (path, tyl, abbrev) ->
+        let variance =
+          try (Env.find_type path env).type_variance
+          with Not_found -> List.map (fun _ -> Variance.may_inv) tyl in
+        abbrev := Mnil;
+        List.iter2
+          (fun v t ->
+            if Variance.(mem May_weak v)
+            then generalize_structure var_level t
+            else generalize_expansive env var_level visited t)
+          variance tyl
+    | Tpackage (_, _, tyl) ->
+        List.iter (generalize_structure var_level) tyl
+    | Tarrow (_, t1, t2, _) ->
+        generalize_structure var_level t1;
+        generalize_expansive env var_level visited t2
+    | _ ->
+        iter_type_expr (generalize_expansive env var_level visited) ty
   end
 
 let generalize_expansive env ty =
   simple_abbrevs := Mnil;
   try
-    generalize_expansive env !nongen_level ty
+    generalize_expansive env !nongen_level (Hashtbl.create 7) ty
   with Unify ([_, ty'] as tr) ->
     raise (Unify ((ty, ty') :: tr))
 
@@ -1104,6 +1100,7 @@ let new_declaration newtype manifest =
     type_loc = Location.none;
     type_attributes = [];
     type_immediate = false;
+    type_unboxed = { unboxed = false; default = false };
   }
 
 let instance_constructor ?in_pattern cstr =
@@ -1826,9 +1823,6 @@ let mkvariant fields closed =
        {row_fields = fields; row_closed = closed; row_more = newvar();
         row_bound = (); row_fixed = false; row_name = None })
 
-(* force unification in Reither when one side has as non-conjunctive type *)
-let rigid_variants = ref false
-
 (**** Unification ****)
 
 (* Return whether [t0] occurs in [ty]. Objects are also traversed. *)
@@ -1938,6 +1932,17 @@ let non_aliasable p decl =
   (* in_pervasives p ||  (subsumed by in_current_module) *)
   in_current_module p && decl.type_newtype_level = None
 
+let is_instantiable env p =
+  try
+    let decl = Env.find_type p env in
+    decl.type_kind = Type_abstract &&
+    decl.type_private = Public &&
+    decl.type_arity = 0 &&
+    decl.type_manifest = None &&
+    not (non_aliasable p decl)
+  with Not_found -> false
+
+
 (* PR#7113: -safe-string should be a global property *)
 let compatible_paths p1 p2 =
   let open Predef in
@@ -2035,9 +2040,11 @@ and mcomp_fields type_pairs env ty1 ty2 =
   let (fields2, rest2) = flatten_fields ty2 in
   let (fields1, rest1) = flatten_fields ty1 in
   let (pairs, miss1, miss2) = associate_fields fields1 fields2 in
+  let has_present =
+    List.exists (fun (_, k, _) -> field_kind_repr k = Fpresent) in
   mcomp type_pairs env rest1 rest2;
-  if miss1 <> []  && (object_row ty1).desc = Tnil
-  || miss2 <> []  && (object_row ty2).desc = Tnil then raise (Unify []);
+  if has_present miss1  && (object_row ty2).desc = Tnil
+  || has_present miss2  && (object_row ty1).desc = Tnil then raise (Unify []);
   List.iter
     (function (_n, k1, t1, k2, t2) ->
        mcomp_kind k1 k2;
@@ -2048,9 +2055,9 @@ and mcomp_kind k1 k2 =
   let k1 = field_kind_repr k1 in
   let k2 = field_kind_repr k2 in
   match k1, k2 with
-    (Fvar _, Fvar _)
-  | (Fpresent, Fpresent) -> ()
-  | _                    -> raise (Unify [])
+    (Fpresent, Fabsent)
+  | (Fabsent, Fpresent) -> raise (Unify [])
+  | _                   -> ()
 
 and mcomp_row type_pairs env row1 row2 =
   let row1 = row_repr row1 and row2 = row_repr row2 in
@@ -2167,13 +2174,13 @@ let find_lowest_level ty =
 let find_newtype_level env path =
   try match (Env.find_type path env).type_newtype_level with
     Some x -> x
-  | None -> assert false
-  with Not_found -> assert false
+  | None -> raise Not_found
+  with Not_found -> let lev = Path.binding_time path in (lev, lev)
 
 let add_gadt_equation env source destination =
-  if local_non_recursive_abbrev !env (Path.Pident source) destination then begin
+  if local_non_recursive_abbrev !env source destination then begin
     let destination = duplicate_type destination in
-    let source_lev = find_newtype_level !env (Path.Pident source) in
+    let source_lev = find_newtype_level !env source in
     let decl = new_declaration (Some source_lev) (Some destination) in
     let newtype_level = get_newtype_level () in
     env := Env.add_local_constraint source decl newtype_level !env;
@@ -2223,10 +2230,10 @@ let complete_type_list ?(allow_absent=false) env nl1 lv2 mty2 nl2 tl2 =
         nt2 :: complete (if n = n2 then nl else nl1) ntl'
     | n :: nl, _ ->
         try
-          let (_, decl) =
+          let path =
             Env.lookup_type (concat_longident (Longident.Lident "Pkg") n) env'
           in
-          match decl with
+          match Env.find_type path env' with
             {type_arity = 0; type_kind = Type_abstract;
              type_private = Public; type_manifest = Some t2} ->
                (n, nondep_instance env' lv2 id2 t2) :: complete nl ntl2
@@ -2249,6 +2256,18 @@ let unify_package env unify_list lv1 p1 n1 tl1 lv2 p2 n2 tl2 =
   || !package_subtype env p1 n1 tl1 p2 n2 tl2
   && !package_subtype env p2 n2 tl2 p1 n1 tl1 then () else raise Not_found
 
+
+(* force unification in Reither when one side has as non-conjunctive type *)
+let rigid_variants = ref false
+
+(* drop not force unification in Reither, even in fixed case
+   (not sound, only use it when checking exhaustiveness) *)
+let passive_variants = ref false
+let with_passive_variants f x =
+  if !passive_variants then f x else
+  match passive_variants := true; f x with
+  | r           -> passive_variants := false; r
+  | exception e -> passive_variants := false; raise e
 
 let unify_eq t1 t2 =
   t1 == t2 ||
@@ -2424,24 +2443,24 @@ and unify3 env t1 t1' t2 t2' =
                       reify env t1; reify env t2
                   end)
               inj (List.combine tl1 tl2)
-      | (Tconstr ((Path.Pident p) as path,[],_),
-         Tconstr ((Path.Pident p') as path',[],_))
-        when is_newtype !env path && is_newtype !env path'
+      | (Tconstr (path,[],_),
+         Tconstr (path',[],_))
+        when is_instantiable !env path && is_instantiable !env path'
         && !generate_equations ->
           let source, destination =
             if find_newtype_level !env path > find_newtype_level !env path'
-            then  p,t2'
-            else  p',t1'
+            then  path , t2'
+            else  path', t1'
           in
           add_gadt_equation env source destination
-      | (Tconstr ((Path.Pident p) as path,[],_), _)
-        when is_newtype !env path && !generate_equations ->
+      | (Tconstr (path,[],_), _)
+        when is_instantiable !env path && !generate_equations ->
           reify env t2';
-          add_gadt_equation env p t2'
-      | (_, Tconstr ((Path.Pident p) as path,[],_))
-        when is_newtype !env path && !generate_equations ->
+          add_gadt_equation env path t2'
+      | (_, Tconstr (path,[],_))
+        when is_instantiable !env path && !generate_equations ->
           reify env t1';
-          add_gadt_equation env p t1'
+          add_gadt_equation env path t1'
       | (Tconstr (_,_,_), _) | (_, Tconstr (_,_,_)) when !umode = Pattern ->
           reify env t1';
           reify env t2';
@@ -2666,6 +2685,7 @@ and unify_row_field env fixed1 fixed2 more l f1 f2 =
   | Reither(c1, tl1, m1, e1), Reither(c2, tl2, m2, e2) ->
       if e1 == e2 then () else
       let redo =
+        not !passive_variants &&
         (m1 || m2 || fixed1 || fixed2 ||
          !rigid_variants && (List.length tl1 = 1 || List.length tl2 = 1)) &&
         begin match tl1 @ tl2 with [] -> false
@@ -2691,6 +2711,7 @@ and unify_row_field env fixed1 fixed2 more l f1 f2 =
         [], [] -> ()
       | (tu1::tlu1), _ :: _ ->
           (* Attempt to merge all the types containing univars *)
+          if not !passive_variants then
           List.iter (unify env tu1) (tlu1@tlu2)
       | (tu::_, []) | ([], tu::_) -> occur_univar !env tu
       end;
@@ -2748,8 +2769,10 @@ let unify_gadt ~newtype_level:lev (env:Env.t ref) ty1 ty2 =
 let unify_var env t1 t2 =
   let t1 = repr t1 and t2 = repr t2 in
   if t1 == t2 then () else
-  match t1.desc with
-    Tvar _ ->
+  match t1.desc, t2.desc with
+    Tvar _, Tconstr _ when deep_occur t1 t2 ->
+      unify (ref env) t1 t2
+  | Tvar _, _ ->
       let reset_tracing = check_trace_gadt_instances env in
       begin try
         occur env t1 t2;
@@ -3656,7 +3679,8 @@ let rec lid_of_path ?(hash="") = function
       Longident.Lapply (lid_of_path ~hash p1, lid_of_path p2)
 
 let find_cltype_for_path env p =
-  let _path, cl_abbr = Env.lookup_type (lid_of_path ~hash:"#" p) env in
+  let cl_path = Env.lookup_type (lid_of_path ~hash:"#" p) env in
+  let cl_abbr = Env.find_type cl_path env in
 
   match cl_abbr.type_manifest with
     Some ty ->
@@ -4332,6 +4356,7 @@ let nondep_type_decl env mid id is_covariant decl =
       type_loc = decl.type_loc;
       type_attributes = decl.type_attributes;
       type_immediate = decl.type_immediate;
+      type_unboxed = decl.type_unboxed;
     }
   with Not_found ->
     clear_hash ();
