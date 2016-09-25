@@ -8,6 +8,12 @@ Next version (tbd):
 - PR#7315, GPR#736: refine some error locations
   (Gabriel Scherer and Alain Frisch, report by Matej Košík)
 
+### Standard library:
+
+- GPR#760: Add a functions List.compare_lengths and
+  List.compare_length_with to avoid full list length computations
+  (Fabrice Le Fessant)
+
 ### Tools:
 
 - PR#7333: ocamldoc, use the first sentence of text file as
@@ -39,9 +45,18 @@ Next version (tbd):
    review by Gabriel Scherer, Alain Frisch and Hezekiah M. Carty)
 
 ### Manual and documentation:
+
 - GPR#693: fail on unexpected errors or warnings within caml_example
   environment.
   (Florian Angeletti)
+
+### Bug fixes
+
+- GPR#795: remove 256-character limitation on Sys.executable_name
+  (Xavier Leroy)
+
+- GPR#814: fix the Buffer.add_substring bounds check to handle overflow
+   (Jeremy Yallop)
 
 
 OCaml 4.04.0:
@@ -57,6 +72,7 @@ OCaml 4.04.0:
 
 - GPR#301: local exception declarations "let exception ... in"
   (Alain Frisch)
+
 - GPR#508: Allow shortcut for extension on semicolons: ;%foo
   (Jeremie Dimino)
 
@@ -67,7 +83,6 @@ OCaml 4.04.0:
 
 - PR#7233: Support GADT equations on non-local abstract types
   (Jacques Garrigue)
-
 
 ### Compiler user-interface and warnings:
 
@@ -239,7 +254,6 @@ OCaml 4.04.0:
   array of floats
   (Thomas Braibant)
 
-
 ### Manual and documentation:
 
 - PR#7243: warn users against using WinZip to unpack the source archive
@@ -276,7 +290,6 @@ OCaml 4.04.0:
   "-unsafe-string" is not allowed, thus giving stronger non-local
   guarantees about immutability of strings
   (Alain Frisch, review by Hezekiah M. Carty)
-
 
 ### Bug fixes:
 
